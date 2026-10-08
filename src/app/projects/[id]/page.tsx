@@ -117,6 +117,8 @@ function ProjectDetail({ params }: { params: { id: string } }) {
         </Button>
       </div>
       {err && <div className="mt-4"><Alert tone="error" title="Couldn't complete that">{err}</Alert></div>}
+      {searchParams.get("searchConsole") === "connected" && <div className="mt-4"><Alert tone="success" title="Search Console connected">Performance data is now available in this site&apos;s overview.</Alert></div>}
+      {searchParams.get("searchConsole") === "error" && <div className="mt-4"><Alert tone="error" title="Search Console connection failed">{searchParams.get("message") || "Try connecting again."}</Alert></div>}
 
       {running && <ScanProgress crawl={crawl} />}
       {crawl?.status === "failed" && (
@@ -191,6 +193,8 @@ function ProjectDetail({ params }: { params: { id: string } }) {
             </div>
           )}
 
+          {tab === "overview" && <SearchPerformance projectId={id} websiteUrl={detail.project.websiteUrl} />}
+
           {tab === "issues" && (
             <div className="mt-5">
               <div className="mb-4 flex flex-wrap gap-1.5" role="group" aria-label="Filter by severity">
@@ -252,6 +256,148 @@ function ProjectDetail({ params }: { params: { id: string } }) {
 
       <IssueDrawer issue={openIssue} onClose={() => openIssueDeep(null)} onFixed={loadAll} />
     </Shell>
+  );
+}
+
+function SearchPerformance({ projectId, websiteUrl }: { projectId: string; websiteUrl: string }) {
+  const [property, setProperty] = useState(websiteUrl);
+  const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function load() {
+    setLoading(true);
+    setError("");
+    try {
+      const result = await fetch(`/api/projects/${projectId}/search-console`).then((r) => r.json());
+      if (!result.ok) throw new Error(result.error);
+      setData(result.data);
+      setError(result.data.error || "");
+      if (result.data.siteUrl) setProperty(result.data.siteUrl);
+    } catch (e: any) { setError(e.message || "Could not load Search Console data"); }
+    finally { setLoading(false); }
+  }
+
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [projectId]);
+
+  function connect() {
+    if (!property.trim()) return;
+    const url = new URL(`/api/projects/${projectId}/search-console/connect`, window.location.origin);
+    url.searchParams.set("siteUrl", property.trim());
+    window.location.href = url.toString();
+  }
+
+  async function disconnect() {
+    setBusy(true);
+    const result = await fetch(`/api/projects/${projectId}/search-console`, { method: "DELETE" }).then((r) => r.json()).catch(() => null);
+    setBusy(false);
+    if (result?.ok) { setData({ connected: false }); setError(""); }
+    else setError(result?.error || "Could not disconnect Search Console");
+  }
+
+  const delta = (current: number, previous: number) => previous ? `${current >= previous ? "+" : ""}${Math.round(((current - previous) / previous) * 100)}%` : current ? "New" : "—";
+  const number = (value: number) => new Intl.NumberFormat().format(Math.round(value));
+  const percent = (value: number) => `${(value * 100).toFixed(1)}%`;
+
+  return (
+    <section className="mt-6 border-t border-slate-200 pt-5" aria-label="Search performance">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="section-title">Google Search performance</h2>
+          <p className="body mt-0.5">Search Console data for context. Changes here are not attributed to individual fixes.</p>
+        </div>
+        {data?.connected && <Button variant="ghost" size="sm" loading={busy} onClick={disconnect}>Disconnect</Button>}
+      </div>
+
+      {loading ? <div className="mt-4"><LoadingState lines={3} label="Loading Search Console…" /></div> : !data?.connected ? (
+        <div className="mt-4 max-w-2xl">
+          {data?.configured ? <Field label="Search Console property" hint="Use the exact property URL, or sc-domain:example.com for a Domain property.">
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <Input value={property} onChange={(e) => setProperty(e.target.value)} placeholder="https://example.com/" />
+                <Button variant="secondary" onClick={connect}>Connect Search Console</Button>
+              </div>
+            </Field>
+            : <p className="text-sm text-slate-600">Search Console connection is not available for this workspace yet.</p>}
+          {error && <p className="mt-2 text-sm text-red-700" role="alert">{error}</p>}
+        </div>
+      ) : error ? (
+        <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+          <p>{error}</p>
+          <p className="mt-1 text-[13px]">Check that the connected Google account can access {data.siteUrl} in Search Console.</p>
+          <div className="mt-2 flex gap-2">
+            <Button variant="secondary" size="sm" onClick={load}>Retry</Button>
+            <Button variant="ghost" size="sm" onClick={connect}>Reconnect</Button>
+          </div>
+        </div>
+      ) : (
+        <>
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[13px] text-slate-500">
+            <span className="mono truncate">{data.siteUrl}</span>
+            <span>Last 28 complete days · through {new Date(`${data.period.endDate}T00:00:00`).toLocaleDateString()}</span>
+          </div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {[
+              ["Clicks", number(data.current.clicks), delta(data.current.clicks, data.previous.clicks)],
+              ["Impressions", number(data.current.impressions), delta(data.current.impressions, data.previous.impressions)],
+              ["Click-through rate", percent(data.current.ctr), delta(data.current.ctr, data.previous.ctr)],
+              ["Average position", data.current.position.toFixed(1), "Lower is better"],
+            ].map(([label, value, comparison]) => (
+              <div key={label} className="rounded-lg border border-slate-200 p-3">
+                <div className="eyebrow">{label}</div>
+                <div className="mt-1 flex items-baseline justify-between gap-2">
+                  <span className="text-2xl font-semibold tabular-nums">{value}</span>
+                  <span className="text-[12px] text-slate-500">{comparison}</span>
+                </div>
+                {label !== "Average position" && <div className="mt-0.5 text-[12px] text-slate-400">vs previous 28 days</div>}
+              </div>
+            ))}
+          </div>
+          <div className="mt-5">
+            <h3 className="text-sm font-semibold">Daily clicks</h3>
+            {data.trend.length ? (
+              <div className="mt-3 flex h-24 items-end gap-1" role="img" aria-label="Daily clicks trend for the last 28 days">
+                {data.trend.map((item: any) => {
+                  const max = Math.max(1, ...data.trend.map((row: any) => row.clicks));
+                  return <div key={item.date} title={`${item.date}: ${number(item.clicks)} clicks`} className="min-w-0 flex-1 rounded-t-sm bg-indigo-500/75" style={{ height: `${Math.max(3, (item.clicks / max) * 100)}%` }} />;
+                })}
+              </div>
+            ) : <p className="body mt-2">No daily search data for this period yet.</p>}
+          </div>
+          <div className="mt-5 grid gap-5 lg:grid-cols-2">
+            <SearchRows title="Top queries" rows={data.queries} labelKey="query" number={number} percent={percent} />
+            <SearchRows title="Top pages" rows={data.pages} labelKey="page" number={number} percent={percent} />
+          </div>
+          <div className="mt-5 border-t border-slate-100 pt-4">
+            <h3 className="text-sm font-semibold">Fixes applied during this period</h3>
+            <p className="body mt-0.5">Compare timing with search trends; these events do not establish cause and effect.</p>
+            {data.appliedChanges.length ? <ul className="mt-2 divide-y divide-slate-100">
+              {data.appliedChanges.slice(0, 5).map((change: any) => <li key={change.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2 text-[13px]">
+                <span className="font-medium">{change.kind.replace(/_/g, " ")}</span>
+                <span className="min-w-0 flex-1 truncate text-slate-500">{change.proposedValue || "Applied site change"}</span>
+                <time className="shrink-0 text-slate-500" dateTime={change.appliedAt}>{new Date(change.appliedAt).toLocaleDateString()}</time>
+              </li>)}
+            </ul> : <p className="body mt-2">No fixes were applied during this period.</p>}
+          </div>
+          <p className="mt-4 text-[12px] text-slate-400">Search Console may omit low-volume queries and pages from its results.</p>
+        </>
+      )}
+    </section>
+  );
+}
+
+function SearchRows({ title, rows, labelKey, number, percent }: { title: string; rows: any[]; labelKey: "query" | "page"; number: (value: number) => string; percent: (value: number) => string }) {
+  return (
+    <div>
+      <h3 className="text-sm font-semibold">{title}</h3>
+      {rows.length ? <div className="mt-2 divide-y divide-slate-100 border-t border-slate-100">
+        {rows.slice(0, 5).map((row, index) => <div key={`${row[labelKey]}-${index}`} className="flex items-center gap-3 py-2 text-[13px]">
+          <span className="min-w-0 flex-1 truncate" title={row[labelKey]}>{row[labelKey]}</span>
+          <span className="shrink-0 tabular-nums text-slate-500">{number(row.clicks)} clicks</span>
+          <span className="hidden shrink-0 tabular-nums text-slate-500 sm:inline">{percent(row.ctr)} CTR</span>
+        </div>)}
+      </div> : <p className="body mt-2">No data available for this period.</p>}
+    </div>
   );
 }
 

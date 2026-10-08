@@ -28,7 +28,9 @@ export function Reveal({
       animate={inView ? { opacity: 1, y: 0 } : undefined}
       transition={{ duration: duration.reveal, ease: easeOutExpo, delay }}
       viewport={{ once }}
-    />
+    >
+      {children}
+    </Tag>
   );
 }
 

@@ -11,6 +11,7 @@ import { clsx } from "clsx";
 import { Modal, toast, ToastHost } from "./ui";
 import { AnimatePresence, motion } from "motion/react";
 import { overlayFade, panelRise, staggerContainer, staggerItem } from "@/lib/motion";
+import { preferredProject, rememberProject } from "@/lib/project-selection";
 
 const NAV = [
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
@@ -28,13 +29,20 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const path = usePathname();
   const router = useRouter();
   const [projects, setProjects] = useState<any[]>([]);
+  const [activeId, setActiveId] = useState<string | null>(null);
   const [me, setMe] = useState<any>(null);
   const [cmdOpen, setCmdOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [switchOpen, setSwitchOpen] = useState(false);
 
   useEffect(() => {
-    fetch("/api/projects").then((r) => r.json()).then((j) => { if (j.ok) setProjects(j.data); }).catch(() => {});
+    fetch("/api/projects").then((r) => r.json()).then((j) => {
+      if (!j.ok) return;
+      setProjects(j.data);
+      const routeId = path.match(/^\/projects\/([^/]+)/)?.[1];
+      const selected = routeId ? j.data.find((p: any) => p.id === routeId) : preferredProject(j.data);
+      if (selected) { setActiveId(selected.id); rememberProject(selected.id); }
+    }).catch(() => {});
     fetch("/api/auth/me").then((r) => r.json()).then((j) => setMe(j.data?.user)).catch(() => {});
   }, [path]);
 
@@ -48,7 +56,12 @@ export function Shell({ children }: { children: React.ReactNode }) {
   }, []);
 
   const currentId = path.match(/^\/projects\/([^/]+)/)?.[1];
-  const current = projects.find((p) => p.id === currentId) || projects[0];
+  const current = projects.find((p) => p.id === currentId) || projects.find((p) => p.id === activeId) || preferredProject(projects);
+
+  function selectProject(id: string) {
+    setActiveId(id);
+    rememberProject(id);
+  }
 
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -166,7 +179,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
         )}
       </AnimatePresence>
 
-      <ProjectSwitcher open={switchOpen} onClose={() => setSwitchOpen(false)} projects={projects} currentId={current?.id} />
+      <ProjectSwitcher open={switchOpen} onClose={() => setSwitchOpen(false)} projects={projects} currentId={current?.id} onSelect={selectProject} />
       <CommandMenu open={cmdOpen} onClose={() => setCmdOpen(false)} projects={projects} />
       <ToastHost />
     </div>
@@ -185,7 +198,7 @@ function hostOf(url: string) {
   try { return new URL(url).hostname; } catch { return url; }
 }
 
-function ProjectSwitcher({ open, onClose, projects, currentId }: { open: boolean; onClose: () => void; projects: any[]; currentId?: string }) {
+function ProjectSwitcher({ open, onClose, projects, currentId, onSelect }: { open: boolean; onClose: () => void; projects: any[]; currentId?: string; onSelect: (id: string) => void }) {
   const router = useRouter();
   return (
     <Modal open={open} onClose={onClose} title="Switch site">
@@ -193,7 +206,7 @@ function ProjectSwitcher({ open, onClose, projects, currentId }: { open: boolean
         {projects.map((p) => (
           <button
             key={p.id}
-            onClick={() => { onClose(); router.push(`/projects/${p.id}`); }}
+            onClick={() => { onSelect(p.id); onClose(); router.push(`/projects/${p.id}`); }}
             className={clsx("flex w-full items-center gap-3 rounded-[10px] border px-3 py-2.5 text-left transition", p.id === currentId ? "border-slate-900 bg-slate-50" : "border-slate-200 hover:border-slate-300 hover:bg-slate-50")}
           >
             <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-900 text-sm font-semibold text-white">{(p.name || "S")[0].toUpperCase()}</span>

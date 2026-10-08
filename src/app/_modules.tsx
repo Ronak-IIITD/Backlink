@@ -3,8 +3,9 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { FileText, KeyRound, Link2, Users } from "lucide-react";
 import { Shell } from "@/components/shell";
-import { Badge, Breadcrumb, Button, EmptyState, LoadingState, Table } from "@/components/ui";
+import { Badge, Breadcrumb, Button, EmptyState, Field, Input, LoadingState, Table, toast } from "@/components/ui";
 import { Stagger, StaggerItem } from "@/components/motion";
+import { preferredProject } from "@/lib/project-selection";
 
 function useModule() {
   const [pid, setPid] = useState<string | null>(null);
@@ -14,9 +15,10 @@ function useModule() {
   useEffect(() => {
     fetch("/api/projects").then((r) => r.json()).then(async (j) => {
       if (!j.ok) { window.location.href = "/login"; return; }
-      if (!j.data[0]) { setLoading(false); return; }
-      setPid(j.data[0].id); setPname(j.data[0].name);
-      const k = await fetch(`/api/projects/${j.data[0].id}/opportunities`).then((x) => x.json());
+      const project = preferredProject<any>(j.data);
+      if (!project) { setLoading(false); return; }
+      setPid(project.id); setPname(project.name);
+      const k = await fetch(`/api/projects/${project.id}/opportunities`).then((x) => x.json());
       if (k.ok) setData(k.data);
       setLoading(false);
     }).catch(() => setLoading(false));
@@ -56,8 +58,11 @@ export function ContentPage() {
                     ))}
                   </ul>
                   <div className="mt-3 flex gap-2">
-                    <Button variant="secondary" size="sm">Generate outline</Button>
-                    <Button variant="ghost" size="sm">View related pages</Button>
+                    <Button variant="secondary" size="sm" onClick={() => {
+                      const text = [o.suggestedTitle, ...(o.outline || []).map((item: string, i: number) => `${i + 1}. ${item}`)].filter(Boolean).join("\n\n");
+                      navigator.clipboard.writeText(text).then(() => toast("Outline copied", "Paste it into your content brief.")).catch(() => toast("Couldn't copy outline", "Clipboard access is unavailable in this browser."));
+                    }}>Copy outline</Button>
+                    <Link href={pid ? `/projects/${pid}` : "/projects"} className="btn btn-ghost btn-sm">Open audit</Link>
                   </div>
                   </article>
                 </StaggerItem>
@@ -93,37 +98,64 @@ export function KeywordsPage() {
 
 export function CompetitorsPage() {
   const { pid, pname, data, loading } = useModule();
+  const [competitors, setCompetitors] = useState<any[]>([]);
+  const [url, setUrl] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  useEffect(() => setCompetitors(data?.competitors || []), [data?.competitors]);
+
+  async function addCompetitor(e: React.FormEvent) {
+    e.preventDefault();
+    if (!pid || !url.trim()) return;
+    setSaving(true);
+    setError("");
+    try {
+      const result = await fetch(`/api/projects/${pid}/competitors`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: url.trim() }),
+      }).then((r) => r.json());
+      if (!result.ok) { setError(result.error); return; }
+      setCompetitors((current) => [...current, result.data]);
+      setUrl("");
+      toast("Competitor added", "Saved to this site's workspace.");
+    } catch { setError("Couldn't add competitor."); }
+    finally { setSaving(false); }
+  }
+
   return (
     <Shell>
       <Crumb pid={pid} pname={pname} label="Competitors" />
       <h1 className="page-title mt-2">Competitors</h1>
       <p className="body mt-1">Strategic gaps from structure we can actually fetch. No invented traffic, no fake authority scores.</p>
       <div className="mt-5 space-y-2.5">
+        {!loading && pid && <form onSubmit={addCompetitor} className="flex flex-col gap-2 sm:flex-row">
+          <div className="min-w-0 flex-1"><Field label="Competitor website">
+            <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://competitor.com" inputMode="url" />
+          </Field></div>
+          <Button type="submit" size="sm" loading={saving} className="sm:mt-6">Add competitor</Button>
+        </form>}
+        {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
         {loading ? <LoadingState lines={3} />
           : (
             <>
               <Stagger className="space-y-2.5">
-                {(data?.competitors || []).map((c: any) => (
+                {competitors.map((c: any) => (
                   <StaggerItem as="div" key={c.id}>
                     <div className="card flex items-center gap-3 p-4">
                       <span className="flex h-9 w-9 items-center justify-center rounded-[10px] bg-slate-100 text-sm font-semibold text-slate-600">{(c.url || "?")[8]?.toUpperCase() || "C"}</span>
                       <span className="mono truncate text-sm">{c.url}</span>
-                      <Badge tone="watch" className="ml-auto">tracked</Badge>
+                      <Badge tone="watch" className="ml-auto">added</Badge>
                     </div>
                   </StaggerItem>
                 ))}
               </Stagger>
-              {!data?.competitors?.length && (
+              {!competitors.length && (
                 <EmptyState
                   icon={<Users className="h-5 w-5" />}
-                  title="No competitors tracked"
-                  body="Add one competitor URL per line at onboarding — or below soon. Comparison uses only pages we fetch: service coverage, guides, and structure."
-                  action={<Link href="/projects" className="btn btn-secondary btn-sm">Add competitor</Link>}
+                  title="No competitors added"
+                  body={pid ? `Add a competitor for ${pname}. URLs are saved to this site; coverage comparisons are not available yet.` : "Create a site before adding competitors."}
                 />
               )}
-              <div className="card p-4 text-sm text-slate-600">
-                <b className="text-slate-900">How comparison works.</b> We fetch competitor sitemaps and key pages, then report what they cover that you don&apos;t — e.g. “Competitor A has 5 dedicated service pages; you mention them on one general page.” Metric-free until a data integration is connected.
-              </div>
+              {!!competitors.length && <p className="body">Competitor URLs are saved to {pname}. Coverage comparisons are not available yet.</p>}
             </>
           )}
       </div>
@@ -132,12 +164,34 @@ export function CompetitorsPage() {
 }
 
 export function BacklinksPage() {
-  const { pid, pname, loading } = useModule();
+  const { pid, pname, data, loading } = useModule();
+  const backlinks = data?.backlinks || [];
+  const opportunities = data?.backlinkOpps || [];
   return (
     <Shell>
       <Crumb pid={pid} pname={pname} label="Backlinks" />
       <h1 className="page-title mt-2">Backlinks</h1>
-      <p className="body mt-1">Legitimate prospecting only. Referring domains, new/lost tracking, and quality-scored opportunities — verified, never bulk spam.</p>
+      <p className="body mt-1">Verified links and opportunities for the selected site.</p>
+      <div className="mt-4">
+        {loading ? <LoadingState lines={3} /> : backlinks.length || opportunities.length ? <div className="divide-y divide-slate-100 border-t border-slate-200">
+          {[...backlinks.map((row: any) => ({ ...row, kind: "Backlink" })), ...opportunities.map((row: any) => ({ ...row, kind: "Opportunity" }))].map((row: any) => (
+            <div key={`${row.kind}-${row.id}`} className="flex flex-wrap items-center gap-3 py-3 text-sm">
+              <Badge tone={row.kind === "Backlink" ? "completed" : "next"}>{row.kind}</Badge>
+              <span className="mono min-w-0 flex-1 truncate">{row.sourceUrl || row.url || row.domain}</span>
+              <span className="text-slate-500">{row.status || row.oppType || "—"}</span>
+            </div>
+          ))}
+        </div> : <EmptyState
+          icon={<Link2 className="h-5 w-5" />}
+          title="No backlink data yet"
+          body="Connect a link data provider to see referring domains and link opportunities here. No metrics are shown until a source is connected."
+        />}
+      </div>
+    </Shell>
+  );
+}
+
+/*
       <div className="mt-5 grid gap-4 md:grid-cols-4">
         {[["Referring domains", "—"], ["New links", "—"], ["Lost links", "—"], ["Opportunities", "—"]].map(([k, v]) => (
           <div key={k} className="card p-4">
@@ -162,3 +216,4 @@ export function BacklinksPage() {
 
 // Unused import guard
 void Button;
+*/

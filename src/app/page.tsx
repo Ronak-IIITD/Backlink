@@ -68,7 +68,7 @@ export default function Home() {
             </StaggerItem>
           </Stagger>
 
-          {/* Product preview — the actual app, with quiet depth */}
+          {/* Sample product preview */}
           <motion.div ref={previewRef} style={reduce ? undefined : { y: previewY }}>
             <Reveal delay={0.15} y={20}>
               <div id="product" className="mt-10 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-md scroll-mt-20">
@@ -82,6 +82,10 @@ export default function Home() {
                     </div>
                   </div>
                   <div className="p-5 md:p-6">
+                    <div className="mb-3 flex items-center gap-2">
+                      <div className="eyebrow">Example audit</div>
+                      <span className="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-medium text-slate-500">SAMPLE DATA</span>
+                    </div>
                     <div className="flex flex-wrap items-end justify-between gap-4">
                       <div>
                         <div className="eyebrow">SEO health</div>
@@ -272,8 +276,8 @@ function Feature({ title, body, points, flip }: { title: string; body: string; p
           </ul>
         </div>
       </Reveal>
-      <Reveal delay={0.1} className={flip ? "md:order-1" : ""} aria-hidden>
-        <div className="card p-5">
+      <Reveal delay={0.1} className={flip ? "md:order-1" : ""}>
+        <div className="card p-5" aria-hidden="true">
           <div className="space-y-2">
             <div className="h-3 w-2/5 rounded bg-slate-200" />
             <div className="h-3 w-full rounded bg-slate-100" />

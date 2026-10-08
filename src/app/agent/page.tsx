@@ -8,6 +8,7 @@ import { Badge, Button, EmptyState, LoadingState, toast } from "@/components/ui"
 import { AnimatedProgress, AnimatedNumber, useReducedMotionFlag } from "@/components/motion";
 import { clsx } from "clsx";
 import { easeOutExpo, duration, staggerItem } from "@/lib/motion";
+import { preferredProject } from "@/lib/project-selection";
 
 type Rec = { id: string; category: string; bucket: string; priority: number; whatWrong: string; whyMatters: string; whatToChange: string; canAutomate: boolean; needsApproval: string | null };
 
@@ -28,12 +29,13 @@ export default function AgentPage() {
   useEffect(() => {
     fetch("/api/projects").then((r) => r.json()).then(async (j) => {
       if (!j.ok) { window.location.href = "/login"; return; }
-      if (!j.data[0]) { setLoading(false); return; }
-      setPid(j.data[0].id); setPname(j.data[0].name);
+      const project = preferredProject<any>(j.data);
+      if (!project) { setLoading(false); return; }
+      setPid(project.id); setPname(project.name);
       const [r2, a, rn] = await Promise.all([
-        fetch(`/api/projects/${j.data[0].id}/recommendations`).then((x) => x.json()),
-        fetch(`/api/projects/${j.data[0].id}/actions`).then((x) => x.json()),
-        fetch(`/api/projects/${j.data[0].id}/runs`).then((x) => x.json()).catch(() => null),
+        fetch(`/api/projects/${project.id}/recommendations`).then((x) => x.json()),
+        fetch(`/api/projects/${project.id}/actions`).then((x) => x.json()),
+        fetch(`/api/projects/${project.id}/runs`).then((x) => x.json()).catch(() => null),
       ]);
       if (r2.ok) { setRecs(r2.data.recommendations); setSel(r2.data.recommendations[0]?.id || null); }
       if (a.ok) setActions(a.data);

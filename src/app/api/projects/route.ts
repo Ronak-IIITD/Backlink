@@ -4,6 +4,7 @@ import { ProjectInputSchema, normalizeUrl } from "@/lib/url-validation";
 import { assertUrlSafe } from "@/lib/security/ssrf";
 import { ok, fail, toStatus } from "@/lib/api";
 import { rateLimit, clientIp } from "@/lib/rate-limit";
+import { enqueueCrawl } from "@/lib/jobs/queue";
 
 export async function GET() {
   try {
@@ -65,7 +66,14 @@ export async function POST(req: Request) {
         } catch {}
       }
     }
-    await prisma.auditLog.create({ data: { userId: u.id, action: "project.create", entity: "project", entityId: project.id, meta: JSON.stringify({ websiteUrl }) } });
+    const crawl = await prisma.crawl.create({
+      data: { projectId: project.id, status: "queued", progress: JSON.stringify({ phase: "queued", message: "Queued…" }) },
+    });
+    await prisma.auditLog.createMany({ data: [
+      { userId: u.id, action: "project.create", entity: "project", entityId: project.id, meta: JSON.stringify({ websiteUrl }) },
+      { userId: u.id, action: "crawl.start", entity: "crawl", entityId: crawl.id },
+    ] });
+    enqueueCrawl(crawl.id);
     return ok(project, 201);
   } catch (e: any) {
     return fail(e.message || "failed", toStatus(e));

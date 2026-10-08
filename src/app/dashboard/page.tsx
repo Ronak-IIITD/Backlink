@@ -5,6 +5,7 @@ import Link from "next/link";
 import { AlertTriangle, ArrowRight, CheckCircle2, ScanSearch } from "lucide-react";
 import { Stagger, StaggerItem, Reveal, AnimatedNumber, AnimatedScoreRing } from "@/components/motion";
 import { EmptyState, LoadingState } from "@/components/ui";
+import { preferredProject } from "@/lib/project-selection";
 
 type Counts = { critical: number; high: number; opportunities: number };
 
@@ -19,8 +20,8 @@ export default function Dashboard() {
   useEffect(() => {
     fetch("/api/projects").then((r) => r.json()).then(async (j) => {
       if (!j.ok) { window.location.href = "/login"; return; }
-      if (!j.data[0]) { setLoading(false); return; }
-      const p = j.data[0];
+      const p = preferredProject<any>(j.data);
+      if (!p) { setLoading(false); return; }
       setPid(p.id); setPname(p.name);
       try {
         const d = await fetch(`/api/projects/${p.id}`).then((x) => x.json());

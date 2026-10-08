@@ -72,3 +72,7 @@ API: see `src/app/api/` — `/projects`, `/:id`, `/:id/crawl`, `/:id/pages|issue
 ## Env
 
 See `.env.example`. Required: `DATABASE_URL`, `SESSION_SECRET`. Optional: `OPENAI_*`, `CRAWL_*`.
+
+### Google Search Console
+
+To show clicks, impressions, CTR, position, and applied-fix dates beside an audit, create a Google OAuth web client and enable the Search Console API. Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `GOOGLE_SEARCH_CONSOLE_REDIRECT_URI`; register that exact redirect URI in the OAuth client. The default local callback is `http://localhost:3000/api/integrations/search-console/callback`. The integration requests read-only Search Console access. Refresh tokens are encrypted with a key derived from `SESSION_SECRET`.

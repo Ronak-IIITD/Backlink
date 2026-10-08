@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { Alert, Breadcrumb, EmptyState, LoadingState, SevBadge } from "@/components/ui";
 import { Stagger, StaggerItem, AnimatedNumber } from "@/components/motion";
+import { preferredProject } from "@/lib/project-selection";
 
 export default function IssuesPage() {
   const [pid, setPid] = useState<string | null>(null);
@@ -17,9 +18,10 @@ export default function IssuesPage() {
   useEffect(() => {
     fetch("/api/projects").then((r) => r.json()).then(async (j) => {
       if (!j.ok) { window.location.href = "/login"; return; }
-      if (!j.data[0]) { setLoading(false); return; }
-      setPid(j.data[0].id); setPname(j.data[0].name);
-      const k = await fetch(`/api/projects/${j.data[0].id}/issues`).then((x) => x.json());
+      const project = preferredProject<any>(j.data);
+      if (!project) { setLoading(false); return; }
+      setPid(project.id); setPname(project.name);
+      const k = await fetch(`/api/projects/${project.id}/issues`).then((x) => x.json());
       if (k.ok) setIssues(k.data.issues);
       else setErr(k.error);
       setLoading(false);

@@ -9,7 +9,7 @@ import { Alert, Button, Field, Input, LoadingState, Textarea } from "@/component
 import { Stagger, StaggerItem, useReducedMotionFlag } from "@/components/motion";
 import { easeOutExpo, duration } from "@/lib/motion";
 
-const STEPS = ["Website", "Business", "Audience", "Competitors", "Review"];
+const STEPS = ["Website", "Context (optional)", "Review"];
 
 export default function Projects() {
   const router = useRouter();
@@ -132,29 +132,29 @@ export default function Projects() {
                   </Field>
                 )}
                 {step === 2 && (
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <Field label="Business name"><Input autoFocus value={form.businessName} onChange={(e) => setForm({ ...form, businessName: e.target.value })} placeholder="Acme Co" /></Field>
-                    <Field label="Business type"><Input value={form.businessType} onChange={(e) => setForm({ ...form, businessType: e.target.value })} placeholder="Plumbing, SaaS, dental…" /></Field>
+                  <div className="space-y-4">
+                    <p className="text-sm text-slate-600">Add context to tailor recommendations, or skip it. Your audit starts as soon as the site is created.</p>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <Field label="Business name"><Input autoFocus value={form.businessName} onChange={(e) => setForm({ ...form, businessName: e.target.value })} placeholder="Acme Co" /></Field>
+                      <Field label="Business type"><Input value={form.businessType} onChange={(e) => setForm({ ...form, businessType: e.target.value })} placeholder="Plumbing, SaaS, dental…" /></Field>
+                      <Field label="Target country"><Input value={form.targetCountry} onChange={(e) => setForm({ ...form, targetCountry: e.target.value })} placeholder="United States" /></Field>
+                      <Field label="Target city"><Input value={form.targetCity} onChange={(e) => setForm({ ...form, targetCity: e.target.value })} placeholder="Austin, TX" /></Field>
+                    </div>
+                    <Field label="Target keywords" hint="One per line; used to prioritize recommendations.">
+                      <Textarea value={form.targetKeywords} onChange={(e) => setForm({ ...form, targetKeywords: e.target.value })} placeholder={"emergency plumber Austin\nwater heater repair"} />
+                    </Field>
+                    <Field label="Competitors" hint="Optional. One URL per line.">
+                      <Textarea value={form.competitors} onChange={(e) => setForm({ ...form, competitors: e.target.value })} placeholder={"https://competitor-one.com\nhttps://competitor-two.com"} />
+                    </Field>
                   </div>
                 )}
                 {step === 3 && (
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <Field label="Target country"><Input autoFocus value={form.targetCountry} onChange={(e) => setForm({ ...form, targetCountry: e.target.value })} placeholder="United States" /></Field>
-                    <Field label="Target city (optional)"><Input value={form.targetCity} onChange={(e) => setForm({ ...form, targetCity: e.target.value })} placeholder="Austin, TX" /></Field>
-                  </div>
-                )}
-                {step === 4 && (
-                  <Field label="Competitors (one per URL per line)" hint="Only pages we can actually fetch are compared.">
-                    <Textarea autoFocus value={form.competitors} onChange={(e) => setForm({ ...form, competitors: e.target.value })} placeholder={"https://competitor-one.com\nhttps://competitor-two.com"} />
-                  </Field>
-                )}
-                {step === 5 && (
                   <div className="space-y-2 text-sm">
                     <Row icon={<Globe className="h-4 w-4" />} label="Website" value={form.websiteUrl} />
                     <Row icon={<Building2 className="h-4 w-4" />} label="Business" value={form.businessName || "—"} />
                     <Row icon={<Users className="h-4 w-4" />} label="Competitors" value={form.competitors.split("\n").filter(Boolean).length + " tracked"} />
                     <div className="rounded-[10px] border border-indigo-200 bg-indigo-50/60 p-3 text-[13px] text-slate-600">
-                      After creating, we crawl up to 30 pages, run 19 checks, and score transparently. Watch live progress on the next screen.
+                      Your first crawl starts automatically. We scan up to 30 pages, run 19 checks, and show live progress. Nothing on your site is changed.
                     </div>
                   </div>
                 )}
@@ -168,7 +168,10 @@ export default function Projects() {
                 <ArrowLeft className="h-4 w-4" /> {step > 1 ? "Back" : "Cancel"}
               </Button>
               {step < STEPS.length ? (
-                <Button size="sm" disabled={!valid(step - 1)} onClick={() => setStep(step + 1)}>Continue <ArrowRight className="h-4 w-4" /></Button>
+                <div className="flex items-center gap-2">
+                  {step === 2 && <Button variant="ghost" size="sm" onClick={() => setStep(3)}>Skip for now</Button>}
+                  <Button size="sm" disabled={!valid(step - 1)} onClick={() => setStep(step + 1)}>Continue <ArrowRight className="h-4 w-4" /></Button>
+                </div>
               ) : (
                 <Button size="sm" loading={creating} onClick={create}><Check className="h-4 w-4" /> Create & start audit</Button>
               )}
