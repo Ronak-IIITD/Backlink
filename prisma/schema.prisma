@@ -1,0 +1,339 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// SQLite dev (zero-infra). For Postgres prod, change provider to "postgresql"
+// and set DATABASE_URL to postgres connection string. Schema is portable
+// except @@index lengths which work on both.
+
+model User {
+  id           String       @id @default(cuid())
+  email        String       @unique
+  name         String?
+  passwordHash String
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  memberships  Membership[]
+  auditLogs    AuditLog[]
+}
+
+model Organization {
+  id          String       @id @default(cuid())
+  name        String
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  memberships Membership[]
+  projects    Project[]
+}
+
+model Membership {
+  id             String       @id @default(cuid())
+  userId         String
+  organizationId String
+  role           String       @default("owner") // owner | member
+  createdAt      DateTime     @default(now())
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, organizationId])
+}
+
+model Project {
+  id               String              @id @default(cuid())
+  organizationId   String
+  name             String
+  websiteUrl       String
+  businessName     String?
+  businessType     String?
+  targetCountry    String?
+  targetCity       String?
+  targetKeywords   String? // JSON array string
+  cmsAdapter       String? // manual|webhook|wordpress (null = auto/env default)
+  cmsWebhookUrl    String?
+  cmsWebhookSecret String?
+  autoRescan       String? // off|weekly|monthly (null = off)
+  lastAutoCrawlAt  DateTime?
+  competitors      Competitor[]
+  crawls           Crawl[]
+  keywords         Keyword[]
+  backlinks        Backlink[]
+  backlinkOpps     BacklinkOpportunity[]
+  contentOpps      ContentOpportunity[]
+  reports          Report[]
+  agentRuns        AgentRun[]
+  shareLinks       ShareLink[]
+  schedules        ReportSchedule[]
+  alertPrefs       NotificationPref[]
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+  organization     Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+model ShareLink {
+  id        String   @id @default(cuid())
+  projectId String
+  tokenHash String   @unique
+  label     String   @default("Client review")
+  scope     String   @default("approve") // approve: view queue + approve/reject awaiting
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+}
+
+model ReportSchedule {
+  id         String    @id @default(cuid())
+  projectId  String
+  email      String
+  frequency  String    @default("weekly") // weekly|monthly
+  whiteLabel Boolean   @default(false)
+  agencyName String?
+  lastSentAt DateTime?
+  createdAt  DateTime  @default(now())
+  project    Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+}
+
+model NotificationPref {
+  id                 String    @id @default(cuid())
+  projectId          String
+  email              String
+  events             String    @default("[\"critical\",\"score_drop\",\"crawl_failed\"]") // JSON array
+  scoreDropThreshold Int       @default(10) // points of overall drop that triggers
+  whiteLabel         Boolean   @default(false)
+  agencyName         String?
+  active             Boolean   @default(true)
+  lastSentAt         DateTime?
+  createdAt          DateTime  @default(now())
+  project            Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+}
+
+model Competitor {
+  id        String   @id @default(cuid())
+  projectId String
+  url       String
+  label     String?
+  createdAt DateTime @default(now())
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model Crawl {
+  id            String     @id @default(cuid())
+  projectId     String
+  status        String     @default("queued") // queued|running|completed|failed
+  startedAt     DateTime?
+  finishedAt    DateTime?
+  pagesFound    Int        @default(0)
+  pagesCrawled  Int        @default(0)
+  progress      String? // JSON: {phase, message}
+  error         String?
+  createdAt     DateTime   @default(now())
+  project       Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  pages         Page[]
+  issues        SEOIssue[]
+  recommendations Recommendation[]
+}
+
+model Page {
+  id               String   @id @default(cuid())
+  crawlId          String
+  url              String
+  finalUrl         String?
+  statusCode       Int?
+  contentType      String?
+  title            String?
+  metaDescription  String?
+  canonical        String?
+  h1               String?
+  h2s              String? // JSON array
+  bodyText         String? // truncated to 20k chars
+  bodyHash         String?
+  wordCount        Int      @default(0)
+  links            String? // JSON array of {href,text,internal}
+  images           String? // JSON array of {src,alt}
+  altMissingCount  Int      @default(0)
+  og               String? // JSON
+  schemaTypes      String? // JSON array
+  robotsDirectives String? // JSON {noindex,nofollow}
+  indexable        Boolean  @default(true)
+  sizeBytes        Int      @default(0)
+  loadMs           Int      @default(0)
+  depth            Int      @default(0)
+  isOrphan         Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  crawl            Crawl    @relation(fields: [crawlId], references: [id], onDelete: Cascade)
+
+  @@index([crawlId])
+  @@index([url])
+}
+
+model SEOIssue {
+  id             String   @id @default(cuid())
+  crawlId        String
+  type           String // missing_title, duplicate_title, ...
+  severity       String // critical|high|medium|low
+  title          String
+  whatWrong      String
+  whyMatters     String // plain language
+  recommendation String
+  impact         String   @default("medium") // estimated impact
+  difficulty     String   @default("easy") // easy|medium|hard
+  affectedUrls   String // JSON array
+  affectedCount  Int      @default(1)
+  source         String   @default("rule") // rule|ai
+  createdAt      DateTime @default(now())
+  crawl          Crawl    @relation(fields: [crawlId], references: [id], onDelete: Cascade)
+  actions        AIAction[]
+
+  @@index([crawlId])
+  @@index([severity])
+}
+
+model Recommendation {
+  id               String     @id @default(cuid())
+  crawlId          String
+  category         String // technical|onpage|content|linking|indexability|performance
+  priority         Int        @default(50) // 0-100 higher = do first
+  bucket           String     @default("DO_THIS_NEXT") // DO_THIS_NOW|DO_THIS_NEXT|WATCH|NO_ACTION
+  whatWrong        String
+  whyMatters       String
+  whatToChange     String
+  canAutomate      Boolean    @default(false)
+  needsApproval    String? // what user must approve
+  relatedIssueType String?
+  affectedUrls     String     @default("[]")
+  confidence       Float      @default(0.9)
+  createdAt        DateTime   @default(now())
+  crawl            Crawl      @relation(fields: [crawlId], references: [id], onDelete: Cascade)
+  actions          AIAction[]
+
+  @@index([crawlId])
+}
+
+model AIAction {
+  id               String          @id @default(cuid())
+  recommendationId String?
+  issueId          String?
+  crawlId          String
+  kind             String // meta_fix|title_fix|h1_fix|faq_add|internal_link|...
+  status           String          @default("drafted") // detected|recommended|drafted|awaiting_approval|approved|applied|failed|rejected
+  currentValue     String?
+  proposedValue    String?
+  reason           String?
+  payload          String? // JSON structured change
+  reviewedBy       String?
+  reviewedAt       DateTime?
+  appliedAt        DateTime?
+  error            String?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  recommendation   Recommendation? @relation(fields: [recommendationId], references: [id], onDelete: SetNull)
+  issue            SEOIssue?       @relation(fields: [issueId], references: [id], onDelete: SetNull)
+
+  @@index([crawlId])
+  @@index([status])
+}
+
+model Keyword {
+  id        String   @id @default(cuid())
+  projectId String
+  term      String
+  intent    String? // informational|transactional|navigational|commercial
+  createdAt DateTime @default(now())
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model Backlink {
+  id          String   @id @default(cuid())
+  projectId   String
+  sourceUrl   String
+  targetUrl   String?
+  anchor      String?
+  linkType    String? // dofollow|nofollow|unknown
+  status      String   @default("discovered") // discovered|verified|lost
+  discoveredAt DateTime @default(now())
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model BacklinkOpportunity {
+  id           String   @id @default(cuid())
+  projectId    String
+  domain       String
+  url          String?
+  relevance    String?
+  oppType      String? // resource|directory|guest|broken_link|mention|pr
+  qualityScore Int      @default(50)
+  action       String?
+  status       String   @default("suggested")
+  createdAt    DateTime @default(now())
+  project      Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model ContentOpportunity {
+  id            String   @id @default(cuid())
+  projectId     String
+  topic         String
+  intent        String?
+  targetKeyword String?
+  pageType      String? // new_page|expand_existing|faq
+  outline       String? // JSON array
+  suggestedTitle String?
+  internalLinks String? // JSON
+  relatedUrls   String? // JSON
+  createdAt     DateTime @default(now())
+  project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model Report {
+  id        String   @id @default(cuid())
+  projectId String
+  crawlId   String?
+  summary   String // JSON {score, categories, tops}
+  markdown  String?
+  createdAt DateTime @default(now())
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model AgentRun {
+  id          String   @id @default(cuid())
+  projectId   String
+  crawlId     String?
+  agent       String // crawl_analyst|technical|onpage|strategist|fix_generator|monitor
+  input       String? // JSON
+  output      String? // JSON
+  tokensUsed  Int      @default(0)
+  costUsd     Float    @default(0)
+  durationMs  Int      @default(0)
+  status      String   @default("completed") // running|completed|failed
+  error       String?
+  createdAt   DateTime @default(now())
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  action    String // project.create|crawl.start|action.approve|...
+  entity    String?
+  entityId  String?
+  meta      String? // JSON
+  createdAt DateTime @default(now())
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+}

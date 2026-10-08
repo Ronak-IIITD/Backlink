@@ -1,0 +1,180 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ————— SEO Agent design tokens: restrained neutral + single indigo accent ————— */
+:root {
+  --bg: #fafafa;
+  --surface: #ffffff;
+  --surface-2: #f8fafc;
+  --border: #e5e7eb;
+  --border-strong: #d4d4d8;
+  --text: #0f172a;
+  --text-2: #475569;
+  --text-3: #94a3b8;
+  --accent: #4f46e5;
+  --accent-ink: #4338ca;
+  --accent-soft: #eef2ff;
+  --success: #059669;
+  --success-soft: #ecfdf5;
+  --danger: #dc2626;
+  --danger-soft: #fef2f2;
+  --warn: #d97706;
+  --warn-soft: #fffbeb;
+  --ring: rgba(79, 70, 229, 0.25);
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.05);
+  --shadow-md: 0 4px 16px -4px rgba(15, 23, 42, 0.12), 0 2px 4px -2px rgba(15, 23, 42, 0.06);
+  --r-sm: 8px;
+  --r-md: 10px;
+  --r-lg: 14px;
+  --r-xl: 16px;
+
+  /* Motion tokens — mirrors src/lib/motion.ts */
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-out-cubic: cubic-bezier(0.33, 1, 0.68, 1);
+  --ease-calm: cubic-bezier(0.65, 0, 0.35, 1);
+  --t-fast: 150ms;
+  --t-base: 220ms;
+  --t-slow: 400ms;
+}
+
+/* Lenis drives scrolling when JS is on; native smooth only as no-JS fallback. */
+html.lenis, html.lenis body { height: auto; }
+.lenis.lenis-smooth { scroll-behavior: auto !important; }
+.lenis.lenis-smooth [data-lenis-prevent] { overscroll-behavior: contain; }
+.lenis.lenis-stopped { overflow: hidden; }
+
+html {
+  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-feature-settings: "cv11", "ss01", "tnum";
+}
+
+/* ————— Focus: visible, consistent, accessible ————— */
+a, button, input, textarea, select, [tabindex] {
+  @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600/40 focus-visible:ring-offset-2 focus-visible:ring-offset-white;
+}
+
+/* ————— Primitives (single source of truth; pages must not invent variants) ————— */
+.btn {
+  @apply inline-flex select-none items-center justify-center gap-2 font-medium;
+  border-radius: var(--r-sm);
+  transition:
+    background-color var(--t-fast) var(--ease-out-cubic),
+    border-color var(--t-fast) var(--ease-out-cubic),
+    color var(--t-fast) var(--ease-out-cubic),
+    box-shadow var(--t-fast) var(--ease-out-cubic),
+    transform var(--t-fast) var(--ease-out-cubic);
+}
+/* Press feedback: the button gives way slightly, then recovers. */
+.btn:active { transform: scale(0.98); }
+.btn:disabled { pointer-events: none; opacity: 0.5; }
+.btn-md { @apply px-4 py-2 text-sm; }
+.btn-sm { @apply px-3 py-1.5 text-[13px]; }
+.btn-lg { @apply px-5 py-2.5 text-[15px]; }
+.btn-primary { @apply bg-slate-900 text-white shadow-sm; }
+.btn-primary:hover { background-color: #1e293b; }
+.btn-accent { @apply bg-indigo-600 text-white shadow-sm; }
+.btn-accent:hover { background-color: #4338ca; }
+.btn-secondary { @apply border border-slate-200 bg-white text-slate-900 shadow-sm; }
+.btn-secondary:hover { background-color: #f8fafc; }
+.btn-ghost { @apply text-slate-600; }
+.btn-ghost:hover { background-color: #f1f5f9; color: #0f172a; }
+.btn-danger { @apply border border-red-200 bg-white text-red-700; }
+.btn-danger:hover { background-color: #fef2f2; }
+
+.input {
+  @apply w-full bg-white text-sm text-slate-900 outline-none transition placeholder:text-slate-400 border border-slate-200;
+  border-radius: var(--r-md);
+  padding: 10px 12px;
+  transition-duration: var(--t-fast);
+  transition-timing-function: var(--ease-out-cubic);
+}
+.input:hover { border-color: #cbd5e1; }
+.input:focus { border-color: #6366f1; box-shadow: 0 0 0 4px rgba(79, 70, 229, 0.08); }
+.label { @apply mb-1.5 block text-[13px] font-medium text-slate-600; }
+.help { @apply mt-1.5 text-[13px] text-slate-500; }
+
+.card {
+  @apply bg-white border border-slate-200/80;
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-sm);
+  transition: border-color var(--t-base) var(--ease-out-cubic), box-shadow var(--t-base) var(--ease-out-cubic), transform var(--t-base) var(--ease-out-cubic);
+}
+.card-hover { }
+.card-hover:hover { border-color: #cbd5e1; box-shadow: var(--shadow-md); transform: translateY(-1px); }
+.panel-soft { @apply bg-slate-50 border border-slate-200/70; border-radius: var(--r-lg); }
+
+.eyebrow { @apply text-xs font-semibold uppercase tracking-[0.08em] text-slate-500; }
+.page-title { @apply text-[28px] md:text-[32px] font-semibold tracking-[-0.02em] leading-tight; }
+.section-title { @apply text-[17px] font-semibold tracking-[-0.01em]; }
+.body { @apply text-[14px] leading-6 text-slate-600; }
+.mono { @apply font-mono text-[13px]; }
+
+/* AI identity: ONE subtle treatment */
+.ai-surface { @apply border-indigo-200 bg-indigo-50/50; }
+.ai-chip {
+  @apply inline-flex items-center gap-1.5 text-xs font-medium text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5;
+  border-radius: 6px;
+}
+
+/* ————— Motion utilities (CSS-only fallbacks; JS uses lib/motion.ts) ————— */
+
+/* One-time entrance for elements above the fold or without JS hooks. */
+@keyframes rise-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+.rise { animation: rise-in var(--t-slow) var(--ease-out-expo) both; }
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.fade { animation: fade-in var(--t-base) var(--ease-out-cubic) both; }
+
+/* Skeleton shimmer: a quiet pulse, not a strobe. */
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+.skeleton {
+  background: linear-gradient(90deg, #f1f5f9 0%, #e8edf3 50%, #f1f5f9 100%);
+  background-size: 200% 100%;
+  animation: skeleton-pulse 1.6s ease-in-out infinite;
+}
+
+/* Drawer fallback animation (used when Motion is unavailable) */
+@keyframes drawer-in {
+  from { transform: translateX(100%); }
+  to { transform: none; }
+}
+
+/* Scroll progress bar at top */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--surface-2); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--border-strong); }
+
+/* Smooth focus-visible ring on first-focus of page */
+:focus-visible { outline: none; }
+
+/* ————— Reduced motion: the last word ————— */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .rise, .fade { animation: none; }
+  .skeleton { animation: none; background: #e8edf3; }
+  .card, .card-hover, .btn, .input { transition-duration: 0.01ms; }
+  .btn:active, .card-hover:hover { transform: none; }
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
