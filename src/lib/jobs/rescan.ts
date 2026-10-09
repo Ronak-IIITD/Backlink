@@ -42,7 +42,7 @@ export async function runDueRescans(now = new Date()): Promise<RescanResult[]> {
     });
     await prisma.project.update({ where: { id: p.id }, data: { lastAutoCrawlAt: now } });
     await prisma.auditLog.create({ data: { userId: null, action: "crawl.auto_start", entity: "crawl", entityId: crawl.id, meta: JSON.stringify({ frequency: freq }) } });
-    enqueueCrawl(crawl.id);
+    await enqueueCrawl(crawl.id);
     results.push({ projectId: p.id, websiteUrl: p.websiteUrl, action: "enqueued", crawlId: crawl.id, message: `Auto-rescan enqueued (${freq}).` });
   }
   return results;

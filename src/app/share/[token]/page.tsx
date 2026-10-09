@@ -1,8 +1,9 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, use } from "react";
 import Link from "next/link";
 
-export default function SharePage({ params }: { params: { token: string } }) {
+export default function SharePage(props: { params: Promise<{ token: string }> }) {
+  const params = use(props.params);
   const [data, setData] = useState<any>(null);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState<string | null>(null);

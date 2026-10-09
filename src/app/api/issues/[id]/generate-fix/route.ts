@@ -3,7 +3,8 @@ import { getSessionUser } from "@/lib/auth";
 import { fixGeneratorAgent } from "@/lib/ai/orchestrator";
 import { ok, fail } from "@/lib/api";
 
-export async function POST(_: Request, { params }: { params: { id: string } }) {
+export async function POST(_: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const u = await getSessionUser();
   if (!u) return fail("UNAUTHORIZED", 401);
   const issue = await prisma.sEOIssue.findUnique({ where: { id: params.id }, include: { crawl: true } });

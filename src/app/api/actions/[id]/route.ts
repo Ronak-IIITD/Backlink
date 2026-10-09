@@ -26,7 +26,8 @@ async function setStatus(id: string, userId: string, status: "approved" | "rejec
   return updated;
 }
 
-export async function POST(req: Request, { params }: { params: { id: string } }) {
+export async function POST(req: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const u = await getSessionUser();
   if (!u) return fail("UNAUTHORIZED", 401);
   const url = new URL(req.url);

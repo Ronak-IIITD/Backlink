@@ -3,7 +3,8 @@ import { getSessionUser, assertProjectAccess } from "@/lib/auth";
 import { normalizeUrl } from "@/lib/url-validation";
 import { ok, fail, toStatus } from "@/lib/api";
 
-export async function POST(req: Request, { params }: { params: { id: string } }) {
+export async function POST(req: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const u = await getSessionUser();
     if (!u) return fail("UNAUTHORIZED", 401);

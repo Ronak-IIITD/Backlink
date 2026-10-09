@@ -24,11 +24,18 @@ npx prisma db push
 npm run dev            # http://localhost:3000
 ```
 
-Prod:
+Tests:
 ```bash
-npm run build && npm start
 npm test               # 5 tests: URL validation, SSRF, rules, scoring
 ```
+
+Production deploy is configured through the Render Blueprint below; it requires managed Postgres and Redis and runs a separate crawl worker.
+
+## Render deployment
+
+`render.yaml` defines a web service, a dedicated BullMQ crawl worker, managed PostgreSQL/Redis, and a daily scheduler for report delivery and rescans. Create the Blueprint from the repository, then set any optional AI, email, and Google OAuth credentials in Render. Configure the exact Search Console redirect URI as `https://<your-service>/api/integrations/search-console/callback` in Google Cloud. Keep `APP_URL` in sync if you attach a custom domain.
+
+Local development continues to use `prisma/schema.prisma` and SQLite. Production uses `prisma/schema.production.prisma`; create schema changes with `npm run db:migrate:dev:production` against a development PostgreSQL database, and deploy them with `npm run db:migrate:deploy`. Render applies migrations during its pre-deploy phase. Crawl jobs use the in-process runner locally and Redis/BullMQ in production. Do not deploy production without both `REDIS_URL` and the separate worker service.
 
 ## What works today (MVP Phases 1–6)
 
@@ -44,8 +51,8 @@ npm test               # 5 tests: URL validation, SSRF, rules, scoring
 
 ```
 Next.js 14 App Router (TS) — frontend + Route Handler API (single deployable)
-Prisma 6 + SQLite dev (file:./dev.db), Postgres-ready (switch provider + DATABASE_URL)
-In-process job runner (src/lib/jobs/queue.ts) — enqueueCrawl() swappable with BullMQ/Redis
+Prisma 6 + SQLite development / PostgreSQL production (`prisma/schema.production.prisma`)
+BullMQ/Redis production crawl queue with dedicated worker; in-process local development runner
 Auth: bcryptjs + jose JWT (httpOnly) + DB sessions, org tenant isolation
 Crawler: fetch + cheerio + robots-parser + psl
 AI: provider abstraction + zod schemas + fallback templates

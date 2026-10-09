@@ -2,7 +2,8 @@ import { prisma } from "@/lib/db";
 import { getSessionUser, assertProjectAccess } from "@/lib/auth";
 import { ok, fail, toStatus } from "@/lib/api";
 
-export async function GET(_: Request, { params }: { params: { id: string } }) {
+export async function GET(_: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const u = await getSessionUser();
     if (!u) return fail("UNAUTHORIZED", 401);

@@ -73,7 +73,7 @@ export async function POST(req: Request) {
       { userId: u.id, action: "project.create", entity: "project", entityId: project.id, meta: JSON.stringify({ websiteUrl }) },
       { userId: u.id, action: "crawl.start", entity: "crawl", entityId: crawl.id },
     ] });
-    enqueueCrawl(crawl.id);
+    await enqueueCrawl(crawl.id);
     return ok(project, 201);
   } catch (e: any) {
     return fail(e.message || "failed", toStatus(e));

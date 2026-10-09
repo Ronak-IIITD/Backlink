@@ -2,10 +2,10 @@ import { getSessionUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { ok, fail } from "@/lib/api";
 
-async function handle(req: Request, ctx: { params: { id: string } }, op: "approved" | "rejected") {
+async function handle(req: Request, id: string, op: "approved" | "rejected") {
   const u = await getSessionUser();
   if (!u) return fail("UNAUTHORIZED", 401);
-  const action = await prisma.aIAction.findUnique({ where: { id: ctx.params.id } });
+  const action = await prisma.aIAction.findUnique({ where: { id } });
   if (!action) return fail("NOT_FOUND", 404);
   const updated = await prisma.aIAction.update({
     where: { id: action.id },
@@ -16,7 +16,8 @@ async function handle(req: Request, ctx: { params: { id: string } }, op: "approv
   return ok(updated);
 }
 
-export async function POST(req: Request, ctx: { params: { id: string } }) {
+export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const { id } = await ctx.params;
   const isApprove = new URL(req.url).pathname.endsWith("/approve");
-  return handle(req, ctx, isApprove ? "approved" : "rejected");
+  return handle(req, id, isApprove ? "approved" : "rejected");
 }

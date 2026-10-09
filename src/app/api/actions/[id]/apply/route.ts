@@ -7,7 +7,8 @@ import { applyAction, adapterStatus } from "@/lib/cms";
  * Approval-gated auto-apply: only works on status=approved actions.
  * Never auto-applies awaiting_approval/drafted — approval boundary enforced.
  */
-export async function POST(_: Request, { params }: { params: { id: string } }) {
+export async function POST(_: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const u = await getSessionUser();
     if (!u) return fail("UNAUTHORIZED", 401);

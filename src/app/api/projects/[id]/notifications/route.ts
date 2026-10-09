@@ -25,7 +25,8 @@ function redact(p: any) {
   };
 }
 
-export async function GET(_: Request, { params }: { params: { id: string } }) {
+export async function GET(_: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const u = await getSessionUser();
     if (!u) return fail("UNAUTHORIZED", 401);
@@ -37,7 +38,8 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
   }
 }
 
-export async function POST(req: Request, { params }: { params: { id: string } }) {
+export async function POST(req: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const u = await getSessionUser();
     if (!u) return fail("UNAUTHORIZED", 401);
@@ -63,7 +65,8 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   }
 }
 
-export async function DELETE(req: Request, { params }: { params: { id: string } }) {
+export async function DELETE(req: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const u = await getSessionUser();
     if (!u) return fail("UNAUTHORIZED", 401);

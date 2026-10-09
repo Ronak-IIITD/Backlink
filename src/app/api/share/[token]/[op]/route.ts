@@ -3,7 +3,8 @@ import { ok, fail } from "@/lib/api";
 import { hashToken } from "@/lib/share";
 
 /** Public (no login): approve/reject a single awaiting action via magic link. */
-export async function POST(req: Request, { params }: { params: { token: string; op: string } }) {
+export async function POST(req: Request, props: { params: Promise<{ token: string; op: string }> }) {
+  const params = await props.params;
   const op = params.op === "approve" ? "approved" : params.op === "reject" ? "rejected" : null;
   if (!op) return fail("Use /approve or /reject.", 400);
   try {

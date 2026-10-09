@@ -1,5 +1,5 @@
 "use client";
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, use, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion } from "motion/react";
 import { ArrowRight, Check, FileSearch, Pencil, X } from "lucide-react";
@@ -21,8 +21,8 @@ function urlsOf(i: Issue): string[] {
   catch { return []; }
 }
 
-function ProjectDetail({ params }: { params: { id: string } }) {
-  const id = params.id;
+function ProjectDetail({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = use(params);
   const router = useRouter();
   const searchParams = useSearchParams();
   const [detail, setDetail] = useState<any>(null);
@@ -401,7 +401,7 @@ function SearchRows({ title, rows, labelKey, number, percent }: { title: string;
   );
 }
 
-export default function ProjectDetailPage(props: { params: { id: string } }) {
+export default function ProjectDetailPage(props: { params: Promise<{ id: string }> }) {
   return (
     <Suspense fallback={null}>
       <ProjectDetail {...props} />

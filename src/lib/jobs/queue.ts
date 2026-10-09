@@ -6,9 +6,11 @@ import { runSeoRules, sortIssues } from "@/lib/audit/rules";
 import { calculateScore } from "@/lib/audit/scoring";
 import { strategistAgent, contentOppsAgent } from "@/lib/ai/orchestrator";
 import { checkAndSendAlerts } from "./alerts";
+import { Queue } from "bullmq";
+import IORedis from "ioredis";
 
 /**
- * Async job architecture (in-process for MVP, swappable with Redis/BullMQ).
+ * Crawl processing shared by the local runner and production BullMQ worker.
  * Flow: queued → running (crawl → audit → AI) → completed|failed. UI polls.
  */
 
@@ -24,6 +26,15 @@ export async function runCrawlJob(crawlId: string) {
   try {
     const crawl = await prisma.crawl.findUnique({ where: { id: crawlId }, include: { project: true } });
     if (!crawl) return;
+    if (crawl.status === "completed") return;
+    await prisma.$transaction([
+      prisma.aIAction.deleteMany({ where: { crawlId } }),
+      prisma.page.deleteMany({ where: { crawlId } }),
+      prisma.sEOIssue.deleteMany({ where: { crawlId } }),
+      prisma.recommendation.deleteMany({ where: { crawlId } }),
+      prisma.report.deleteMany({ where: { crawlId } }),
+      prisma.agentRun.deleteMany({ where: { crawlId } }),
+    ]);
     await prisma.crawl.update({ where: { id: crawlId }, data: { status: "running", startedAt: new Date() } });
     await setProgress(crawlId, "crawl", "Scanning website…");
 
@@ -209,10 +220,34 @@ export async function runCrawlJob(crawlId: string) {
   }
 }
 
-/** Fire-and-forget (in-process). For prod, replace with BullMQ enqueue. */
-export function enqueueCrawl(crawlId: string) {
-  // don't await — let request return fast; UI polls GET crawl
-  setImmediate(() => {
-    runCrawlJob(crawlId).catch((e) => console.error("[job] unhandled", e));
-  });
+let redisConnection: IORedis | undefined;
+let crawlQueue: Queue<{ crawlId: string }> | undefined;
+
+function getCrawlQueue() {
+  const url = process.env.REDIS_URL;
+  if (!url) return undefined;
+  redisConnection ??= new IORedis(url, { maxRetriesPerRequest: 1, enableOfflineQueue: false, connectTimeout: 10_000 });
+  crawlQueue ??= new Queue("crawl", { connection: redisConnection });
+  return crawlQueue;
+}
+
+/** Use durable Redis jobs in production and the lightweight local runner in development. */
+export async function enqueueCrawl(crawlId: string) {
+  try {
+    const queue = getCrawlQueue();
+    if (queue) {
+      await queue.add("crawl", { crawlId }, { jobId: crawlId, removeOnComplete: 1000, removeOnFail: 1000 });
+      return;
+    }
+    if (process.env.NODE_ENV === "production") throw new Error("REDIS_URL is required to enqueue crawl jobs in production");
+    setImmediate(() => {
+      runCrawlJob(crawlId).catch((e) => console.error("[job] unhandled", e));
+    });
+  } catch (error) {
+    await prisma.crawl.update({
+      where: { id: crawlId },
+      data: { status: "failed", finishedAt: new Date(), error: String(error).slice(0, 2000), progress: JSON.stringify({ phase: "failed", message: "Could not queue this crawl" }) },
+    }).catch(() => {});
+    throw error;
+  }
 }

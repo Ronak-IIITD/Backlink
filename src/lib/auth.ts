@@ -30,7 +30,7 @@ export async function createSession(userId: string) {
     .setProtectedHeader({ alg: "HS256" })
     .setExpirationTime(`${MAX_AGE}s`)
     .sign(secret());
-  cookies().set(COOKIE, jwt, {
+  (await cookies()).set(COOKIE, jwt, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
@@ -41,7 +41,7 @@ export async function createSession(userId: string) {
 }
 
 export async function destroySession() {
-  const c = cookies().get(COOKIE)?.value;
+  const c = (await cookies()).get(COOKIE)?.value;
   if (c) {
     try {
       const { payload } = await jwtVerify(c, secret());
@@ -49,11 +49,11 @@ export async function destroySession() {
       if (sid) await prisma.session.deleteMany({ where: { tokenHash: sid } });
     } catch {}
   }
-  cookies().set(COOKIE, "", { maxAge: 0, path: "/" });
+  (await cookies()).set(COOKIE, "", { maxAge: 0, path: "/" });
 }
 
 export async function getSessionUser() {
-  const c = cookies().get(COOKIE)?.value;
+  const c = (await cookies()).get(COOKIE)?.value;
   if (!c) return null;
   try {
     const { payload } = await jwtVerify(c, secret());

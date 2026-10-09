@@ -9,7 +9,8 @@ function registrableDomain(hostname: string) {
   return "domain" in parsed && parsed.domain ? parsed.domain : hostname.toLowerCase();
 }
 
-export async function GET(request: Request, { params }: { params: { id: string } }) {
+export async function GET(request: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const user = await getSessionUser();
     if (!user) return fail("UNAUTHORIZED", 401);

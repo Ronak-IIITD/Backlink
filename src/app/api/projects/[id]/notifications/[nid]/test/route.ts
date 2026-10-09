@@ -4,7 +4,8 @@ import { ok, fail } from "@/lib/api";
 import { sendTestAlert } from "@/lib/jobs/alerts";
 
 /** Authed: send a sample alert to verify client email + branding. */
-export async function POST(_: Request, { params }: { params: { id: string; nid: string } }) {
+export async function POST(_: Request, props: { params: Promise<{ id: string; nid: string }> }) {
+  const params = await props.params;
   try {
     const u = await getSessionUser();
     if (!u) return fail("UNAUTHORIZED", 401);

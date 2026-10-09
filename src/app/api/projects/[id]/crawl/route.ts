@@ -3,7 +3,8 @@ import { getSessionUser, assertProjectAccess } from "@/lib/auth";
 import { enqueueCrawl } from "@/lib/jobs/queue";
 import { ok, fail, toStatus } from "@/lib/api";
 
-export async function POST(_: Request, { params }: { params: { id: string } }) {
+export async function POST(_: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const u = await getSessionUser();
     if (!u) return fail("UNAUTHORIZED", 401);
@@ -13,14 +14,15 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
     if (running) return ok(running);
     const crawl = await prisma.crawl.create({ data: { projectId: params.id, status: "queued", progress: JSON.stringify({ phase: "queued", message: "Queued…" }) } });
     await prisma.auditLog.create({ data: { userId: u.id, action: "crawl.start", entity: "crawl", entityId: crawl.id } });
-    enqueueCrawl(crawl.id);
+    await enqueueCrawl(crawl.id);
     return ok(crawl, 201);
   } catch (e: any) {
     return fail(e.message || "failed", toStatus(e));
   }
 }
 
-export async function GET(_: Request, { params }: { params: { id: string } }) {
+export async function GET(_: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const u = await getSessionUser();
     if (!u) return fail("UNAUTHORIZED", 401);

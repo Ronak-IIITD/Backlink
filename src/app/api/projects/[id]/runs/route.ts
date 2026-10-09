@@ -4,7 +4,8 @@ import { ok, fail, toStatus } from "@/lib/api";
 import { checkBudget } from "@/lib/ai/budget";
 import { adapterStatus } from "@/lib/cms";
 
-export async function GET(_: Request, { params }: { params: { id: string } }) {
+export async function GET(_: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const u = await getSessionUser();
     if (!u) return fail("UNAUTHORIZED", 401);

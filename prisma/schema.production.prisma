@@ -3,11 +3,11 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
-// Local development uses SQLite; production models are mirrored in schema.production.prisma.
+// Production PostgreSQL schema; keep model changes aligned with schema.prisma.
 
 model User {
   id           String       @id @default(cuid())

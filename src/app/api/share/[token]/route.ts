@@ -12,7 +12,8 @@ async function resolveProject(raw: string) {
 }
 
 /** Public (no login): view approval queue via magic link. Never exposes secrets. */
-export async function GET(_: Request, { params }: { params: { token: string } }) {
+export async function GET(_: Request, props: { params: Promise<{ token: string }> }) {
+  const params = await props.params;
   const found = await resolveProject(params.token).catch(() => null);
   if (!found) return fail("Invalid or expired link.", 404);
   const { project } = found;

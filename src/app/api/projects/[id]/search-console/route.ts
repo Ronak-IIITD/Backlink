@@ -3,7 +3,8 @@ import { assertProjectAccess, getSessionUser } from "@/lib/auth";
 import { ok, fail, toStatus } from "@/lib/api";
 import { disconnectSearchConsole, getSearchConsoleData, searchConsoleIsConfigured } from "@/lib/search-console";
 
-export async function GET(_: Request, { params }: { params: { id: string } }) {
+export async function GET(_: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const user = await getSessionUser();
     if (!user) return fail("UNAUTHORIZED", 401);
@@ -29,7 +30,8 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
   }
 }
 
-export async function DELETE(_: Request, { params }: { params: { id: string } }) {
+export async function DELETE(_: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const user = await getSessionUser();
     if (!user) return fail("UNAUTHORIZED", 401);

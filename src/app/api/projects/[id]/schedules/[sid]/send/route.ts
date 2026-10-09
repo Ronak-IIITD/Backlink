@@ -4,7 +4,8 @@ import { ok, fail, toStatus } from "@/lib/api";
 import { sendScheduleNow } from "@/lib/email/send-schedule";
 
 /** Authed: send a scheduled report immediately (tests the client email + white-label). */
-export async function POST(_: Request, { params }: { params: { id: string; sid: string } }) {
+export async function POST(_: Request, props: { params: Promise<{ id: string; sid: string }> }) {
+  const params = await props.params;
   try {
     const u = await getSessionUser();
     if (!u) return fail("UNAUTHORIZED", 401);
