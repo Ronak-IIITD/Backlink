@@ -64,6 +64,17 @@ export async function sendReportEmail(r: ReportEmailInput): Promise<{ sent: bool
   return deliver(r.to, subject, html, r.whiteLabel ? r.agencyName || "agency" : "SEO Agent");
 }
 
+export async function sendPasswordResetEmail(to: string, resetUrl: string) {
+  const safeUrl = resetUrl.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/\"/g, "&quot;");
+  const html = `<!doctype html><html><body style="font-family:system-ui,sans-serif;max-width:560px;margin:0 auto;padding:24px;color:#0f172a">
+<h1 style="font-size:22px">Reset your password</h1>
+<p>Use the link below to choose a new password. It expires in 30 minutes.</p>
+<p><a href="${safeUrl}" style="display:inline-block;background:#0f172a;color:#fff;padding:12px 18px;text-decoration:none">Reset password</a></p>
+<p style="font-size:13px;color:#64748b">If you did not request this, you can ignore this email.</p>
+</body></html>`;
+  return deliver(to, "Reset your SEO Agent password", html, "SEO Agent");
+}
+
 export interface AlertEmailInput {
   to: string;
   projectName: string;

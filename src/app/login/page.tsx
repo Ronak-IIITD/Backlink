@@ -33,6 +33,7 @@ export default function Login() {
         <Field label="Password">
           <Input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required autoComplete="current-password" />
         </Field>
+        <p className="-mt-2 text-right text-sm"><Link href="/forgot-password" className="font-medium text-slate-700 underline underline-offset-2">Forgot password?</Link></p>
         <Button className="w-full" size="lg" loading={loading}>Log in</Button>
       </form>
       <p className="mt-4 text-center text-sm text-slate-500">No account? <Link href="/signup" className="font-medium text-slate-900 underline underline-offset-2">Sign up</Link></p>

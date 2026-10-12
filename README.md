@@ -27,9 +27,11 @@ npm run dev            # http://localhost:3000
 Tests:
 ```bash
 npm test               # 5 tests: URL validation, SSRF, rules, scoring
+npm run smoke           # check local routes and database health
+SMOKE_TEST_BASE_URL=https://your-service.onrender.com npm run smoke
 ```
 
-Production deploy is configured through the Render Blueprint below; it requires managed Postgres and Redis and runs a separate crawl worker.
+Production deploy is configured through the Render Blueprint below; it requires managed Postgres and Redis and runs a separate crawl worker. Password recovery uses Resend, so configure `RESEND_API_KEY` and a verified `RESEND_FROM` sender before enabling customer accounts.
 
 ## Render deployment
 
@@ -50,7 +52,7 @@ Local development continues to use `prisma/schema.prisma` and SQLite. Production
 ## Architecture
 
 ```
-Next.js 14 App Router (TS) — frontend + Route Handler API (single deployable)
+Next.js 15 App Router (TS) — frontend + Route Handler API (single deployable)
 Prisma 6 + SQLite development / PostgreSQL production (`prisma/schema.production.prisma`)
 BullMQ/Redis production crawl queue with dedicated worker; in-process local development runner
 Auth: bcryptjs + jose JWT (httpOnly) + DB sessions, org tenant isolation

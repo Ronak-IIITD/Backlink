@@ -10,6 +10,7 @@
     "worker": "tsx src/worker.ts",
     "lint": "next lint",
     "test": "vitest run",
+    "smoke": "node scripts/smoke-test.mjs",
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
     "db:migrate:dev:production": "prisma migrate dev --schema=prisma/schema.production.prisma",
@@ -52,6 +53,7 @@
     "typescript": "^5"
   },
   "overrides": {
-    "postcss": "$postcss"
+    "postcss": "$postcss",
+    "deepmerge-ts": "^8.0.2"
   }
 }
