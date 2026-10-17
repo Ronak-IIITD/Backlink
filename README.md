@@ -1,87 +1,102 @@
-# SEO Agent — Your AI SEO Employee
+# SEO Agent
 
-ANALYZE → RECOMMEND → GENERATE → EXECUTE → MONITOR
+SEO Agent helps a team understand and improve a website’s search health. It crawls a site, identifies concrete issues, explains their impact, and prepares fixes for review. Approved changes are tracked so the team can follow their progress.
 
-Not another metrics dashboard. Give us a website, we crawl it, find what matters, explain in plain language, draft copy-paste fixes, you approve in one click, we keep monitoring.
+This repository contains the application and its operational notes. The product is under active development; the capabilities below describe the current implementation.
 
-## Frontend — design system
+## Product workflow
 
-Restrained neutral foundation (white / slate-50 surfaces, slate-200 borders, slate-900 text) + one indigo-600 accent reserved for AI drafts, active states, and primary highlights. Primary CTAs are slate-900 (grayscale-beautiful). Radii 8/10/14/16, subtle shadows, 150–300ms fade/rise motion with reduced-motion support.
+1. Add a website and provide business context, target keywords, and competitors.
+2. Run a crawl and review the site audit, health score, and prioritized actions.
+3. Generate a suggested fix, edit it if needed, and approve or reject it.
+4. Review reports and activity as the site is monitored.
 
-- Tokens + primitives: `src/app/globals.css` (`.btn`, `.input`, `.card`, `.ai-chip`, skeletons, focus rings)
-- Components (single source): `src/components/ui.tsx` — Button, Input/Textarea/Select, Badge/SevBadge/AIChip, Tabs, Stat, Progress/ScoreBar, Alert, Skeleton/Loading/Empty/Error, Modal/Drawer/Dropdown, Table, Breadcrumb, Pagination, Toast
-- Shell: `src/components/shell.tsx` — project switcher, calm sidebar, ⌘K command menu, mobile drawer, user footer
-- Marketing: `src/components/marketing.tsx` — shared nav + auth layout
+The audit uses deterministic checks and reports the pages behind each finding. AI features help interpret findings and draft content or fixes. When no AI provider is configured, deterministic fallback responses keep the core workflow usable. The application does not claim unverified rankings, traffic, or backlinks.
 
-Routes: `/` (URL-first hero + real product preview + agent action-stream), `/signup?url=`, `/login`, `/projects` (5-step wizard), `/dashboard` (decision-first), `/projects/:id` (audit + issue drawer with before/after + approve/edit/reject), `/issues`, `/agent` (3-pane workspace: tasks/activity/approvals), `/content`, `/keywords`, `/competitors`, `/backlinks`, `/reports` (timeline), `/settings` (conventional sections), `/help`, `/pricing`. Tables collapse to cards on mobile; no fake testimonials, metrics, or logos anywhere.
+## Current capabilities
 
-## Quickstart
+- Project setup with URL validation and crawl safeguards.
+- Site crawling with robots.txt handling, page and depth limits, and crawl progress.
+- Technical and on-page audits, including titles, descriptions, headings, images, indexability, links, structured data, and performance indicators.
+- A transparent health score with category breakdowns and prioritized next steps.
+- AI-assisted recommendations and fix drafts with an approval history.
+- Project dashboard, issue queue, content and keyword workspaces, competitor and backlink areas, reports, and settings.
+- Organization-scoped access, session-based authentication, and audit logging.
+
+Some integrations and monitoring features are still planned. Search Console connectivity is available as an optional read-only integration when configured.
+
+## Local development
+
+### Requirements
+
+- Node.js and npm
+- SQLite for local development (Prisma uses the local schema)
+
+### Start the app
 
 ```bash
 npm install
-cp .env.example .env   # set SESSION_SECRET (>=32 chars)
-npx prisma db push
-npm run dev            # http://localhost:3000
+cp .env.example .env
 ```
 
-Tests:
+Set `SESSION_SECRET` to a random value of at least 32 characters. Then initialize the local database and start the application:
+
 ```bash
-npm test               # 5 tests: URL validation, SSRF, rules, scoring
-npm run smoke           # check local routes and database health
-SMOKE_TEST_BASE_URL=https://your-service.onrender.com npm run smoke
+npx prisma db push
+npm run dev
 ```
 
-Production deploy is configured through the Render Blueprint below; it requires managed Postgres and Redis and runs a separate crawl worker. Password recovery uses Resend, so configure `RESEND_API_KEY` and a verified `RESEND_FROM` sender before enabling customer accounts.
+The app is available at [http://localhost:3000](http://localhost:3000).
 
-## Render deployment
+Optional integrations are configured through `.env`. AI settings use `OPENAI_API_KEY`, `OPENAI_MODEL`, and `OPENAI_BASE_URL`. Search Console setup is described below.
 
-`render.yaml` defines a web service, a dedicated BullMQ crawl worker, managed PostgreSQL/Redis, and a daily scheduler for report delivery and rescans. Create the Blueprint from the repository, then set any optional AI, email, and Google OAuth credentials in Render. Configure the exact Search Console redirect URI as `https://<your-service>/api/integrations/search-console/callback` in Google Cloud. Keep `APP_URL` in sync if you attach a custom domain.
+## Application areas
 
-Local development continues to use `prisma/schema.prisma` and SQLite. Production uses `prisma/schema.production.prisma`; create schema changes with `npm run db:migrate:dev:production` against a development PostgreSQL database, and deploy them with `npm run db:migrate:deploy`. Render applies migrations during its pre-deploy phase. Crawl jobs use the in-process runner locally and Redis/BullMQ in production. Do not deploy production without both `REDIS_URL` and the separate worker service.
+| Area | Purpose |
+| --- | --- |
+| `/projects` | Create and configure a website project |
+| `/dashboard` | Review site health and the next recommended actions |
+| `/projects/:id` | View a project audit and review individual findings |
+| `/issues` and `/agent` | Work through issues, generated drafts, and approvals |
+| `/content` and `/keywords` | Review content opportunities and keyword work |
+| `/competitors` and `/backlinks` | Review competitor and backlink workspaces |
+| `/reports` | View project reports |
+| `/settings` and `/help` | Manage account settings and find help |
 
-## What works today (MVP Phases 1–6)
+API route handlers live under `src/app/api/`.
 
-1. **Onboarding** — `/projects`: URL validation + normalize, SSRF check, business context, keywords, competitors. `POST /api/projects`
-2. **Crawler** — BFS, same-registrable-domain only (`psl`), robots.txt respected, dedup, redirect chains (5), depth/page caps (30/3), timeout 12s, 400ms rate limit, 2 retries, HTML-only parse, 2MB cap. Extracts title/meta/canonical/H1/H2s/body/links/images+alt/word count/status/OG/schema/robots/indexability. `POST /api/projects/:id/crawl` → poll `GET /api/crawls/:id` (2s UI polling, live progress).
-3. **Audit (19 deterministic rules)** — `src/lib/audit/rules.ts`: broken, missing/dup/long titles, missing/dup meta, missing/multi H1, thin (<200w), alt, noindex, canonical mismatch, oversized (>500KB), slow (>2.5s), OG, schema, orphans, poor internal linking, HTTPS. Each: what/why/fix/impact/difficulty/affected URLs. No LLM, no invented data.
-4. **Score (transparent)** — `src/lib/audit/scoring.ts`: 6 categories (Technical 25%, On-page 25%, Content 15%, Linking 15%, Indexability 12%, Performance 8%). Starts 100, deducts per failed check. Returns explanation + top issues + next actions per category.
-5. **AI strategist + fix generator** — `src/lib/ai/`: modular agents (strategist, fix_generator, content). OpenAI-compatible (`OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_BASE_URL`) with structured JSON; **deterministic fallback when no key** so product works at zero cost. Never invents URLs/rankings/backlinks. Token/cost logged to `AgentRun`.
-6. **Approval flow** — `Detected→Recommended→Drafted→Awaiting approval→Approved→Applied/Failed/Rejected` via `AIAction`. `POST /api/issues/:id/generate-fix`, `POST /api/actions/:id/approve|reject`. Full `AuditLog`. CMS auto-apply is an isolated interface (approve records intent; adapters plug in).
-7. **UI** — Dashboard (health/next actions/categories), Projects, Issues (filter), Content, Keywords, Competitors, Backlinks, AI Agent queue (NOW/NEXT/WATCH), Reports (markdown), Settings. Plain language, progressive disclosure, loading/empty/error states.
+## Runtime overview
 
-## Architecture
+- **Web application:** Next.js App Router serves the product UI and API from one service.
+- **Data:** Prisma with SQLite for local development and PostgreSQL in production.
+- **Crawl jobs:** An in-process runner locally; BullMQ and Redis with a separate worker in production.
+- **Authentication:** Password hashing, signed HTTP-only sessions, and organization membership checks.
+- **SEO analysis:** Rule-based checks and scoring in `src/lib/audit/`.
+- **AI features:** Provider abstraction and structured outputs in `src/lib/ai/`, with deterministic fallbacks.
 
+## Production deployment
+
+`render.yaml` describes the Render services: the web app, a dedicated crawl worker, managed PostgreSQL and Redis, and a scheduler for report delivery and rescans. Production requires `DATABASE_URL`, `REDIS_URL`, and `SESSION_SECRET`; the web service and worker must both be deployed.
+
+Production uses `prisma/schema.production.prisma`. Create production schema migrations against a development PostgreSQL database, then deploy them through the configured pre-deploy step:
+
+```bash
+npm run db:migrate:dev:production
+npm run db:migrate:deploy
 ```
-Next.js 15 App Router (TS) — frontend + Route Handler API (single deployable)
-Prisma 6 + SQLite development / PostgreSQL production (`prisma/schema.production.prisma`)
-BullMQ/Redis production crawl queue with dedicated worker; in-process local development runner
-Auth: bcryptjs + jose JWT (httpOnly) + DB sessions, org tenant isolation
-Crawler: fetch + cheerio + robots-parser + psl
-AI: provider abstraction + zod schemas + fallback templates
-```
 
-DB: User, Organization, Membership, Project, Competitor, Crawl, Page, SEOIssue, Recommendation, AIAction, Keyword, Backlink, BacklinkOpportunity, ContentOpportunity, Report, AgentRun, AuditLog, Session.
+Keep `APP_URL` aligned with the public app URL. If Search Console is enabled, register the exact callback URL, `https://<your-service>/api/integrations/search-console/callback`, in the Google OAuth client and configure the matching environment variables.
 
-API: see `src/app/api/` — `/projects`, `/:id`, `/:id/crawl`, `/:id/pages|issues|recommendations|actions|report|opportunities|competitors`, `/crawls/:id`, `/issues/:id/generate-fix`, `/actions/:id/approve|reject`, `/auth/*`.
+## Optional: Google Search Console
 
-## Security / cost / observability
+To display clicks, impressions, CTR, position, and applied-fix dates, enable the Search Console API and configure a Google OAuth web client with:
 
-- SSRF: scheme allowlist, credential/port/host blocklist, DNS A/AAAA → private-IP reject (`src/lib/security/ssrf.ts`, tested).
-- Authz per-project via org membership; rate limits on auth + project create; input zod-validated; audit logs.
-- Cost: rules first, LLM only for interpretation; fallback = $0; tokens/cost per AgentRun; content-hash ready for change-skipping.
-- Logs: crawl errors/duration, AI usage, job failures, approvals in `AgentRun` + `AuditLog` + server stderr.
+- `GOOGLE_CLIENT_ID`
+- `GOOGLE_CLIENT_SECRET`
+- `GOOGLE_SEARCH_CONSOLE_REDIRECT_URI`
 
-## Roadmap (spec Phases 7–10)
+For local development, the callback is `http://localhost:3000/api/integrations/search-console/callback`. The integration requests read-only Search Console access. Refresh tokens are encrypted using a key derived from `SESSION_SECRET`.
 
-- Content gaps already seeded from real pages; add GSC/keyword-volume integrations (no fake volumes).
-- Competitor re-crawl + diff (real HTML only).
-- Backlink discovery via Common Crawl/Ahrefs/Moz adapters into existing tables + quality score + outreach drafts (approval-gated).
-- Monitor cron: rescan schedule, ranking/backlink watchers, quiet notifications.
+## Configuration
 
-## Env
-
-See `.env.example`. Required: `DATABASE_URL`, `SESSION_SECRET`. Optional: `OPENAI_*`, `CRAWL_*`.
-
-### Google Search Console
-
-To show clicks, impressions, CTR, position, and applied-fix dates beside an audit, create a Google OAuth web client and enable the Search Console API. Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `GOOGLE_SEARCH_CONSOLE_REDIRECT_URI`; register that exact redirect URI in the OAuth client. The default local callback is `http://localhost:3000/api/integrations/search-console/callback`. The integration requests read-only Search Console access. Refresh tokens are encrypted with a key derived from `SESSION_SECRET`.
+See `.env.example` for the full list. `DATABASE_URL` and `SESSION_SECRET` are required. AI, email, and Google OAuth settings are optional. Password recovery requires a Resend API key and a verified sender address.
