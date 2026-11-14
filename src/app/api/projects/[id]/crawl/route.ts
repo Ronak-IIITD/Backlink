@@ -1,35 +1,22 @@
 import { prisma } from "@/lib/db";
 import { getSessionUser, assertProjectAccess } from "@/lib/auth";
-import { enqueueCrawl } from "@/lib/jobs/queue";
-import { ok, fail, toStatus } from "@/lib/api";
-
+import { ok, fail, apiError } from "@/lib/api";
+import { requestCrawl } from "@/lib/jobs/submit";
 export async function POST(_: Request, props: { params: Promise<{ id: string }> }) {
-  const params = await props.params;
   try {
-    const u = await getSessionUser();
-    if (!u) return fail("UNAUTHORIZED", 401);
-    await assertProjectAccess(u.id, params.id);
-    // prevent concurrent runs
-    const running = await prisma.crawl.findFirst({ where: { projectId: params.id, status: { in: ["queued", "running"] } } });
-    if (running) return ok(running);
-    const crawl = await prisma.crawl.create({ data: { projectId: params.id, status: "queued", progress: JSON.stringify({ phase: "queued", message: "Queued…" }) } });
-    await prisma.auditLog.create({ data: { userId: u.id, action: "crawl.start", entity: "crawl", entityId: crawl.id } });
-    await enqueueCrawl(crawl.id);
-    return ok(crawl, 201);
-  } catch (e: any) {
-    return fail(e.message || "failed", toStatus(e));
-  }
+    const user = await getSessionUser();
+    if (!user) return fail("UNAUTHORIZED", 401);
+    const { id } = await props.params;
+    await assertProjectAccess(user.id, id);
+    return ok(await requestCrawl(id, user.id), 201);
+  } catch (error) { return apiError(error); }
 }
-
 export async function GET(_: Request, props: { params: Promise<{ id: string }> }) {
-  const params = await props.params;
   try {
-    const u = await getSessionUser();
-    if (!u) return fail("UNAUTHORIZED", 401);
-    await assertProjectAccess(u.id, params.id);
-    const crawls = await prisma.crawl.findMany({ where: { projectId: params.id }, orderBy: { createdAt: "desc" }, take: 10 });
-    return ok(crawls);
-  } catch (e: any) {
-    return fail(e.message || "failed", toStatus(e));
-  }
+    const user = await getSessionUser();
+    if (!user) return fail("UNAUTHORIZED", 401);
+    const { id } = await props.params;
+    await assertProjectAccess(user.id, id);
+    return ok(await prisma.crawl.findMany({ where: { projectId: id }, orderBy: { createdAt: "desc" }, take: 10 }));
+  } catch (error) { return apiError(error); }
 }

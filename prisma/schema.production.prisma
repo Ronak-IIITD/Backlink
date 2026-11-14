@@ -40,6 +40,8 @@ model Organization {
   updatedAt   DateTime     @updatedAt
   memberships Membership[]
   projects    Project[]
+  suspended   Boolean @default(false)
+  accessPeriods AccessPeriod[]
 }
 
 model Membership {
@@ -59,6 +61,7 @@ model Project {
   organizationId   String
   name             String
   websiteUrl       String
+  renderMode       String @default("javascript")
   businessName     String?
   businessType     String?
   targetCountry    String?
@@ -107,6 +110,7 @@ model ReportSchedule {
   whiteLabel Boolean   @default(false)
   agencyName String?
   lastSentAt DateTime?
+  lastReportId String?
   createdAt  DateTime  @default(now())
   project    Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
@@ -151,6 +155,12 @@ model Competitor {
 model Crawl {
   id            String     @id @default(cuid())
   projectId     String
+  activeProjectId String? @unique
+  leaseToken String?
+  leaseExpiresAt DateTime?
+  coverage String?
+  scoreVersion Int @default(1)
+  reservationId String? @unique
   status        String     @default("queued") // queued|running|completed|failed
   startedAt     DateTime?
   finishedAt    DateTime?
@@ -176,6 +186,9 @@ model Page {
   metaDescription  String?
   canonical        String?
   h1               String?
+  h1Count          Int @default(0)
+  rendered         Boolean @default(false)
+  auditError       String?
   h2s              String? // JSON array
   bodyText         String? // truncated to 20k chars
   bodyHash         String?
@@ -242,6 +255,8 @@ model Recommendation {
 }
 
 model AIAction {
+  activeIssueId String? @unique
+  reservationId String? @unique
   id               String          @id @default(cuid())
   recommendationId String?
   issueId          String?
@@ -255,6 +270,9 @@ model AIAction {
   reviewedBy       String?
   reviewedAt       DateTime?
   appliedAt        DateTime?
+  reportedAt       DateTime?
+  verifiedAt       DateTime?
+  verificationCrawlId String?
   error            String?
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
@@ -303,6 +321,7 @@ model BacklinkOpportunity {
 model ContentOpportunity {
   id            String   @id @default(cuid())
   projectId     String
+  crawlId       String?
   topic         String
   intent        String?
   targetKeyword String?
@@ -358,4 +377,80 @@ model Session {
   tokenHash String   @unique
   expiresAt DateTime
   createdAt DateTime @default(now())
+}
+
+model Invitation {
+  id String @id @default(cuid())
+  email String
+  tokenHash String @unique
+  expiresAt DateTime
+  consumedAt DateTime?
+  createdAt DateTime @default(now())
+  @@index([email])
+}
+
+model AccessPeriod {
+  id String @id @default(cuid())
+  organizationId String
+  kind String
+  startsAt DateTime
+  endsAt DateTime
+  auditLimit Int
+  draftLimit Int
+  auditsUsed Int @default(0)
+  draftsUsed Int @default(0)
+  createdAt DateTime @default(now())
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  reservations UsageReservation[]
+  @@index([organizationId, startsAt, endsAt])
+}
+
+model UsageReservation {
+  id String @id @default(cuid())
+  key String @unique
+  periodId String
+  kind String
+  status String @default("reserved")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  period AccessPeriod @relation(fields: [periodId], references: [id], onDelete: Cascade)
+  @@index([periodId, status])
+}
+
+model BudgetBucket {
+  id String @id
+  organizationId String?
+  used Int @default(0)
+  limit Int
+  updatedAt DateTime @updatedAt
+  @@index([organizationId])
+}
+
+model ProviderCall {
+  id String @id @default(cuid())
+  organizationId String?
+  provider String
+  bucketId String
+  reserved Int
+  charged Int?
+  tokens Int @default(0)
+  tokenBucketId String?
+  tokenReservation Int @default(0)
+  status String @default("reserved")
+  requestId String?
+  createdAt DateTime @default(now())
+  finishedAt DateTime?
+  @@index([organizationId, createdAt])
+  @@index([status, createdAt])
+}
+
+model EmailDelivery {
+  id String @id @default(cuid())
+  key String @unique
+  organizationId String
+  scheduleId String
+  reportId String
+  sentAt DateTime?
+  createdAt DateTime @default(now())
+  @@index([organizationId])
 }

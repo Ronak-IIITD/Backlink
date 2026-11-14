@@ -61,7 +61,7 @@ export function MarketingNav({ links }: { links?: { href: string; label: string 
         </nav>
         <div className="ml-auto flex items-center gap-2">
           <Link href="/login" className="btn btn-ghost btn-sm">Log in</Link>
-          <Link href="/signup" className="btn btn-primary btn-sm">Get started</Link>
+          <Link href="/pricing" className="btn btn-primary btn-sm">Private pilot</Link>
           <button type="button" onClick={() => setOpen((value) => !value)} aria-label={open ? "Close navigation" : "Open navigation"} aria-expanded={open} aria-controls="marketing-mobile-nav" className="rounded-md p-2 text-slate-600 hover:bg-slate-100 md:hidden">
             {open ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
           </button>

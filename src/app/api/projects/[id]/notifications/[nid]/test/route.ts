@@ -1,3 +1,5 @@
+import { rateLimit } from "@/lib/rate-limit";
+import { requirePaid } from "@/lib/pilot/access";
 import { getSessionUser, assertProjectAccess } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { ok, fail } from "@/lib/api";
@@ -9,9 +11,12 @@ export async function POST(_: Request, props: { params: Promise<{ id: string; ni
   try {
     const u = await getSessionUser();
     if (!u) return fail("UNAUTHORIZED", 401);
-    await assertProjectAccess(u.id, params.id);
+    const project = await assertProjectAccess(u.id, params.id);
+    await requirePaid(prisma, project.organizationId);
+    if (!(await rateLimit(`test-alert:${u.id}`, 3, 3600000)).ok) return fail("Please wait before sending another test alert.", 429);
     const pref = await prisma.notificationPref.findUnique({ where: { id: params.nid } });
     if (!pref || pref.projectId !== params.id) return fail("NOT_FOUND", 404);
+    if (pref.email !== u.email) return fail("Use your verified account email.", 403);
     const res = await sendTestAlert(pref.id);
     return ok({ sent: res.sent, mode: res.mode, message: res.message, email: pref.email });
   } catch (e: any) {

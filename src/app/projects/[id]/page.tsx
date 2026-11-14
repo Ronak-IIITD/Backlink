@@ -94,7 +94,7 @@ function ProjectDetail({ params }: { params: Promise<{ id: string }> }) {
   async function startCrawl() {
     setErr("");
     const j = await fetch(`/api/projects/${id}/crawl`, { method: "POST" }).then((r) => r.json());
-    if (j.ok) setCrawl(j.data);
+    if (j.ok) { setCrawl(j.data); window.dispatchEvent(new Event("pilot:usage-changed")); }
     else setErr(j.error);
   }
 
@@ -125,6 +125,7 @@ function ProjectDetail({ params }: { params: Promise<{ id: string }> }) {
         <div className="mt-4"><ErrorState title="The crawl couldn't finish" body={crawl.error || "The server may have blocked the request. Retrying is safe — nothing was changed."} onRetry={startCrawl} /></div>
       )}
 
+      {detail && (!crawl || crawl.status === "failed") && <RenderingPanel projectId={id} currentMode={detail.project.renderMode} onChange={loadAll} />}
       {!detail ? (
         <div className="mt-6"><LoadingState lines={5} label="Loading audit…" /></div>
       ) : !crawl || crawl.status !== "completed" ? (
@@ -147,15 +148,16 @@ function ProjectDetail({ params }: { params: Promise<{ id: string }> }) {
               { id: "issues", label: "Issues", count: issues.length },
               { id: "fixes", label: "Fixes", count: actions.length },
               { id: "pages", label: "Pages", count: pages.length },
-              { id: "cms", label: "CMS" },
-              { id: "share", label: "Share" },
+              { id: "cms", label: "Monitoring" },
             ]}
           />
 
+          {tab === "overview" && detail.legacyAudit && <Alert tone="warn">This audit used an earlier scoring model. Run a new audit before relying on its score or generating fixes.</Alert>}
+          {tab === "overview" && score?.coverage && <p className="body mt-4">Audited {score.coverage.audited} of {score.coverage.attempted} attempted URLs. {score.coverage.partial ? "Coverage is incomplete; this score describes the audited sample." : "All discovered pages within the configured limits were audited."}</p>}
           {tab === "overview" && score && (
             <div className="mt-5 grid gap-4 lg:grid-cols-[320px_1fr]">
               <div className="card flex items-center gap-4 p-5">
-                <AnimatedScoreRing score={score.overall} />
+                {score.overall !== null ? <AnimatedScoreRing score={score.overall} /> : <span>Score unavailable</span>}
                 <div>
                   <div className="eyebrow">SEO health</div>
                   <div className="text-sm text-slate-600">{detail.counts?.pages} pages · {issues.length} issue groups</div>
@@ -244,13 +246,12 @@ function ProjectDetail({ params }: { params: Promise<{ id: string }> }) {
 
           {tab === "cms" && (
             <>
-              <CmsPanel projectId={id} />
+              <RenderingPanel projectId={id} currentMode={detail.project.renderMode} onChange={loadAll} />
               <AutoRescanPanel projectId={id} />
               <AlertsPanel projectId={id} />
             </>
           )}
 
-          {tab === "share" && <SharePanel projectId={id} />}
         </div>
       )}
 
@@ -477,8 +478,6 @@ function AlertsPanel({ projectId }: { projectId: string }) {
   const [email, setEmail] = useState("");
   const [events, setEvents] = useState<string[]>(["critical", "score_drop"]);
   const [threshold, setThreshold] = useState(10);
-  const [wl, setWl] = useState(false);
-  const [agency, setAgency] = useState("Your Agency");
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -500,7 +499,7 @@ function AlertsPanel({ projectId }: { projectId: string }) {
       const j = await fetch(`/api/projects/${projectId}/notifications`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.trim(), events, scoreDropThreshold: threshold, whiteLabel: wl, agencyName: agency.trim() || null }),
+        body: JSON.stringify({ email: email.trim(), events, scoreDropThreshold: threshold }),
       }).then((r) => r.json());
       if (j.ok) { setEmail(""); load(); toast("Alert added", `Watching ${events.join(" + ")} for ${j.email || "this site"}.`); }
       else toast("Couldn't save", j.error);
@@ -519,7 +518,7 @@ function AlertsPanel({ projectId }: { projectId: string }) {
 
   async function test(id: string) {
     const j = await fetch(`/api/projects/${projectId}/notifications/${id}/test`, { method: "POST" }).then((r) => r.json()).catch(() => null);
-    if (j?.ok) toast(j.sent ? "Test sent" : "Logged, not sent", j.message);
+    if (j?.ok) toast(j.data?.sent ? "Test sent" : "Not sent", j.data?.message);
     else toast("Couldn't send test", j?.error || "try again");
   }
 
@@ -527,8 +526,8 @@ function AlertsPanel({ projectId }: { projectId: string }) {
 
   return (
     <div className="card mt-4 p-5">
-      <h2 className="section-title">Alerts — who hears what {mode === "log" && <span className="font-normal text-slate-500">· log mode (set RESEND_API_KEY to send)</span>}</h2>
-      <p className="body mt-1">Instant alerts for drops and failures. Weekly/monthly digests live under Reports → Scheduled emails.</p>
+      <h2 className="section-title">Alerts — who hears what {mode === "log" && <span className="font-normal text-slate-500">· delivery not configured</span>}</h2>
+      <p className="body mt-1">Alerts for new critical findings and comparable health drops. Use your verified account email. Weekly reports are available under Reports.</p>
       <div className="mt-4 grid gap-2 sm:grid-cols-3">
         {ALERT_EVENTS.map((e) => (
           <label key={e.id} className={`flex cursor-pointer items-start gap-2 rounded-[10px] border p-3 text-sm transition ${events.includes(e.id) ? "border-slate-900 bg-slate-50" : "border-slate-200 hover:border-slate-300"}`}>
@@ -546,22 +545,10 @@ function AlertsPanel({ projectId }: { projectId: string }) {
             <Input value={threshold} onChange={(e) => setThreshold(Math.max(5, Math.min(50, Number(e.target.value) || 10)))} type="number" min={5} max={50} />
           </Field>
         )}
-        <Field label="Branding">
-          <label className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-[13px]">
-            <input type="checkbox" checked={wl} onChange={(e) => setWl(e.target.checked)} className="h-3.5 w-3.5 accent-slate-900" /> White-label
-          </label>
-        </Field>
         <div className="flex items-end">
           <Button size="sm" loading={busy} onClick={create}>Watch this site</Button>
         </div>
       </div>
-      {wl && (
-        <div className="mt-3 max-w-[280px]">
-          <Field label="Agency name on alert">
-            <Input value={agency} onChange={(e) => setAgency(e.target.value)} placeholder="Your Agency" />
-          </Field>
-        </div>
-      )}
       {prefs.length > 0 && (
         <div className="mt-3 divide-y divide-slate-100 border-t border-slate-100">
           {prefs.map((p: any) => (
@@ -580,179 +567,6 @@ function AlertsPanel({ projectId }: { projectId: string }) {
           ))}
         </div>
       )}
-    </div>
-  );
-}
-
-function CmsPanel({ projectId }: { projectId: string }) {
-  const [cms, setCms] = useState<any>(null);
-  const [status, setStatus] = useState<any>(null);
-  const [adapter, setAdapter] = useState("auto");
-  const [url, setUrl] = useState("");
-  const [secret, setSecret] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [testing, setTesting] = useState(false);
-  const [loaded, setLoaded] = useState(false);
-
-  useEffect(() => {
-    fetch(`/api/projects/${projectId}/cms`).then((r) => r.json()).then((j) => {
-      if (j.ok) {
-        setCms(j.data.cms);
-        setStatus(j.data.status);
-        setAdapter(j.data.cms?.cmsAdapter || "auto");
-        setUrl(j.data.cms?.cmsWebhookUrl || "");
-      }
-      setLoaded(true);
-    }).catch(() => setLoaded(true));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId]);
-
-  async function save() {
-    setSaving(true);
-    try {
-      const payload: any = { cmsAdapter: adapter };
-      payload.cmsWebhookUrl = url.trim() || null;
-      if (secret.trim()) payload.cmsWebhookSecret = secret.trim();
-      const j = await fetch(`/api/projects/${projectId}/cms`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      }).then((r) => r.json());
-      if (j.ok) {
-        setCms(j.data.cms);
-        setStatus(j.data.status);
-        setSecret("");
-        toast("CMS settings saved", `This site now uses ${j.data.status?.active || adapter} (${j.data.status?.source || "project"}).`);
-      } else toast("Couldn't save", j.error);
-    } finally { setSaving(false); }
-  }
-
-  async function test() {
-    setTesting(true);
-    try {
-      const j = await fetch(`/api/actions/test/apply`, { method: "GET" }).then((r) => r.json()).catch(() => null);
-      void j;
-      toast("Test queued", url ? "Save first, then approve a fix and hit Apply to CMS to verify this client's endpoint." : "Set a webhook URL first, then apply an approved fix to test.");
-    } finally { setTesting(false); }
-  }
-
-  if (!loaded) return <div className="mt-5"><LoadingState lines={3} label="Loading CMS settings…" /></div>;
-
-  return (
-    <div className="mt-5 grid gap-4 lg:grid-cols-[1fr_320px]">
-      <div className="card p-5">
-        <h2 className="section-title">CMS auto-apply — this site only</h2>
-        <p className="body mt-1">Each client site gets its own endpoint. Approval is still required before anything applies.</p>
-        <div className="mt-4 space-y-4">
-          <Field label="Adapter" hint="Auto uses this site's webhook if set, else the server default.">
-            <Select value={adapter} onChange={(e) => setAdapter(e.target.value)} aria-label="CMS adapter">
-              <option value="auto">Auto (recommended)</option>
-              <option value="manual">Manual copy-paste</option>
-              <option value="webhook">Webhook (per-client URL below)</option>
-              <option value="wordpress">WordPress direct (title only MVP)</option>
-            </Select>
-          </Field>
-          <Field label="Client webhook URL" hint="https:// endpoint for this client (Zapier / Make / Webflow Logic). Empty = use server default.">
-            <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://hooks.zapier.com/..." inputMode="url" />
-          </Field>
-          <Field label="Webhook secret (optional)" hint="Sent as X-CMS-Secret. Leave blank to keep existing.">
-            <Input value={secret} onChange={(e) => setSecret(e.target.value)} placeholder={cms?.hasSecret ? "•••••• (set — blank keeps it)" : "shh_..."} type="password" autoComplete="off" />
-          </Field>
-          <div className="flex gap-2">
-            <Button size="sm" loading={saving} onClick={save}>Save for this site</Button>
-            <Button size="sm" variant="secondary" disabled={testing} onClick={test}>How to test</Button>
-          </div>
-        </div>
-      </div>
-      <div className="card h-fit p-5">
-        <div className="eyebrow">Active for this site</div>
-        <div className="mt-1 text-[22px] font-semibold">{status?.active || "manual"}</div>
-        <div className="mt-1 text-[13px] text-slate-500">Source: {status?.source || "env"} · {status?.webhook?.configured ? "webhook ready" : "manual mode"}</div>
-        {!status?.webhook?.configured && (
-          <p className="body mt-3">No webhook for this site yet — approved fixes stay copy-paste until you save one.</p>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function SharePanel({ projectId }: { projectId: string }) {
-  const [links, setLinks] = useState<any[]>([]);
-  const [label, setLabel] = useState("Client review");
-  const [loaded, setLoaded] = useState(false);
-  const [creating, setCreating] = useState(false);
-  const [freshUrl, setFreshUrl] = useState("");
-
-  async function load() {
-    const j = await fetch(`/api/projects/${projectId}/share`).then((r) => r.json()).catch(() => null);
-    if (j?.ok) setLinks(j.data);
-    setLoaded(true);
-  }
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, [projectId]);
-
-  async function create() {
-    setCreating(true);
-    setFreshUrl("");
-    try {
-      const j = await fetch(`/api/projects/${projectId}/share`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ label, days: 30 }),
-      }).then((r) => r.json());
-      if (j.ok) {
-        setFreshUrl(j.data.url);
-        setLabel("Client review");
-        load();
-        toast("Share link created", "Send it to your client — no login needed to approve.");
-      } else toast("Couldn't create link", j.error);
-    } finally { setCreating(false); }
-  }
-
-  async function revoke(id: string) {
-    const j = await fetch(`/api/projects/${projectId}/share?id=${id}`, { method: "DELETE" }).then((r) => r.json()).catch(() => null);
-    if (j?.ok) { load(); toast("Link revoked", "That URL no longer works."); }
-    else toast("Couldn't revoke", j?.error || "try again");
-  }
-
-  if (!loaded) return <div className="mt-5"><LoadingState lines={2} label="Loading share links…" /></div>;
-
-  return (
-    <div className="mt-5 grid gap-4 lg:grid-cols-[1fr_320px]">
-      <div className="card p-5">
-        <h2 className="section-title">Client approval links</h2>
-        <p className="body mt-1">Clients open the link, see awaiting fixes, and approve or reject — no account, no login. You still apply.</p>
-        <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-          <Input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Client review" aria-label="Link label" className="sm:max-w-[240px]" />
-          <Button size="sm" loading={creating} onClick={create}>Create link (30 days)</Button>
-        </div>
-        {freshUrl && (
-          <div className="mt-3 rounded-[10px] border border-emerald-200 bg-emerald-50/60 p-3">
-            <div className="eyebrow text-emerald-800">Copy now — shown once</div>
-            <div className="mono mt-1 break-all text-sm">{freshUrl}</div>
-            <Button size="sm" variant="secondary" className="mt-2" onClick={() => { navigator.clipboard?.writeText(freshUrl).catch(() => {}); toast("Copied", "Share link copied to clipboard."); }}>Copy link</Button>
-          </div>
-        )}
-        <div className="mt-4 space-y-2">
-          {links.map((l: any) => (
-            <div key={l.id} className="flex items-center gap-3 rounded-lg border border-slate-200 px-3 py-2 text-sm">
-              <span className="min-w-0 flex-1">
-                <b>{l.label}</b>
-                <span className="block text-[13px] text-slate-500">Expires {new Date(l.expiresAt).toLocaleDateString()}{l.expired ? " · expired" : ""}</span>
-              </span>
-              <Button size="sm" variant="ghost" onClick={() => revoke(l.id)}>Revoke</Button>
-            </div>
-          ))}
-          {!links.length && <p className="body">No links yet. Create one per client or per review round — revoke anytime.</p>}
-        </div>
-      </div>
-      <div className="card h-fit p-5">
-        <div className="eyebrow">How it works</div>
-        <ol className="mt-2 list-decimal space-y-1 pl-5 text-[13px] text-slate-600">
-          <li>You create a link for the client.</li>
-          <li>Client approves or rejects awaiting fixes.</li>
-          <li>You Apply to CMS from the Fixes tab.</li>
-        </ol>
-      </div>
     </div>
   );
 }
@@ -821,21 +635,22 @@ function FixRow({ action, onChange }: { action: any; onChange: () => void }) {
   const [confirm, setConfirm] = useState<"approve" | "reject" | null>(null);
   const [busy, setBusy] = useState(false);
   const [applying, setApplying] = useState(false);
+  let targetUrl = "";
+  try { targetUrl = JSON.parse(action.payload || "{}").urls?.[0] || ""; } catch {}
   async function decide(path: "approve" | "reject") {
     setBusy(true);
     try {
       const j = await fetch(`/api/actions/${action.id}/${path}`, { method: "POST" }).then((r) => r.json());
-      if (j.ok) { toast(path === "approve" ? "Fix approved" : "Fix rejected", path === "approve" ? "Approved. You can now auto-apply to your CMS." : "Recorded and removed from the queue."); onChange(); }
+      if (j.ok) { toast(path === "approve" ? "Fix approved" : "Fix rejected", path === "approve" ? "Copy the approved value into your website, then report the update." : "Recorded and removed from the queue."); onChange(); }
       else toast("Couldn't save decision", j.error);
     } finally { setBusy(false); setConfirm(null); }
   }
   async function apply() {
     setApplying(true);
     try {
-      const j = await fetch(`/api/actions/${action.id}/apply`, { method: "POST" }).then((r) => r.json());
-      if (j.ok && j.apply?.applied) { toast("Applied to CMS", j.apply.message); onChange(); }
-      else if (j.ok) { toast("Not auto-applied", j.apply?.message || "Copy-paste manually."); }
-      else toast("Apply blocked", j.error);
+      const j = await fetch(`/api/actions/${action.id}/mark-implemented`, { method: "POST" }).then((r) => r.json());
+      if (j.ok) { toast("Update reported", "Run another audit to verify this fix."); onChange(); }
+      else toast("Could not report update", j.error);
     } finally { setApplying(false); }
   }
   return (
@@ -851,9 +666,10 @@ function FixRow({ action, onChange }: { action: any; onChange: () => void }) {
           </span>
         )}
         {action.status === "approved" && (
-          <Button size="sm" variant="accent" disabled={applying} onClick={apply}>{applying ? "Applying…" : "Apply to CMS"}</Button>
+          <Button size="sm" variant="accent" disabled={applying} onClick={apply}>{applying ? "Saving…" : "I updated my website"}</Button>
         )}
       </div>
+      {targetUrl && <p className="mono mt-2 break-all text-slate-500">Target: {targetUrl}</p>}
       <div className="mt-3 grid gap-2 md:grid-cols-2">
         {action.currentValue && (
           <div className="rounded-[10px] border border-red-200 bg-red-50/60 p-3">
@@ -866,6 +682,9 @@ function FixRow({ action, onChange }: { action: any; onChange: () => void }) {
           <div className="mt-1 text-sm font-medium leading-6">{action.proposedValue}</div>
         </div>
       </div>
+      {action.status === "approved" && <Button size="sm" variant="secondary" className="mt-3" onClick={() => navigator.clipboard.writeText(action.proposedValue || "").then(() => toast("Approved fix copied")).catch(() => toast("Could not copy", "Select and copy the proposed value manually."))}>Copy approved fix</Button>}
+      {action.status === "reported_updated" && <p className="body mt-2">You reported this update. It has not been verified yet; run another audit.</p>}
+      {action.status === "verified" && <p className="body mt-2">A later audit checked this page and confirmed the original issue is resolved.</p>}
       {action.reason && <p className="body mt-2">{action.reason}</p>}
       <Modal
         open={confirm !== null} onClose={() => setConfirm(null)} title={confirm === "approve" ? "Approve this fix?" : "Reject this fix?"}
@@ -878,7 +697,7 @@ function FixRow({ action, onChange }: { action: any; onChange: () => void }) {
       >
         <p className="body">
           {confirm === "approve"
-            ? "Approval is recorded with timestamp and reviewer. After approving, use Apply to CMS to push via your configured adapter (webhook/WordPress) — manual copy-paste always works."
+            ? "Approval records your decision. Copy the approved value into your website editor, report the update, and run another audit to verify it."
             : "Rejection is recorded and the fix leaves the queue. The underlying issue stays open."}
         </p>
       </Modal>
@@ -910,9 +729,9 @@ function PagesTable({ pages, page, onPage }: { pages: any[]; page: number; onPag
             status: p.statusCode === 200
               ? <Badge tone="completed">200</Badge>
               : <Badge tone="failed">{p.statusCode || "fail"}</Badge>,
-            title: p.title ? <span className="block max-w-[240px] truncate">{p.title}</span> : <span className="font-medium text-red-600">Missing</span>,
+            title: p.auditError ? <span className="text-amber-700">Not audited</span> : p.title ? <span className="block max-w-[240px] truncate">{p.title}</span> : <span className="font-medium text-red-600">Missing</span>,
             words: <span className="tabular-nums">{p.wordCount}</span>,
-            flags: <span className="text-[13px] text-slate-500">{[!p.metaDescription ? "no meta" : "", !p.h1 ? "no h1" : "", p.wordCount < 200 ? "thin" : ""].filter(Boolean).join(" · ") || "—"}</span>,
+            flags: <span className="text-[13px] text-slate-500">{p.auditError || [!p.metaDescription ? "no meta" : "", !p.h1 ? "no h1" : "", p.wordCount < 200 ? "thin" : ""].filter(Boolean).join(" · ") || "—"}</span>,
           }))}
           rowKey={(_, i) => String(i)}
         />
@@ -926,7 +745,7 @@ function PagesTable({ pages, page, onPage }: { pages: any[]; page: number; onPag
               <Badge tone={p.statusCode === 200 ? "completed" : "failed"}>{p.statusCode || "fail"}</Badge>
               <span className="tabular-nums text-slate-500">{p.wordCount} words</span>
             </div>
-            <div className="mt-1.5 text-sm">{p.title || <span className="font-medium text-red-600">Missing title</span>}</div>
+            <div className="mt-1.5 text-sm">{p.auditError ? <span className="text-amber-700">Not audited: {p.auditError}</span> : p.title || <span className="font-medium text-red-600">Missing title</span>}</div>
           </div>
         ))}
       </div>
@@ -955,17 +774,19 @@ function IssueDrawer({ issue, onClose, onFixed }: { issue: Issue | null; onClose
     setLoading(true);
     try {
       const j = await fetch(`/api/issues/${issue.id}/generate-fix`, { method: "POST" }).then((r) => r.json());
-      if (j.ok) { setFix(j.data); setDraft(j.data.proposedValue); onFixed(); toast("Fix drafted", "Review the before/after below."); }
+      if (j.ok) { setFix(j.data); setDraft(j.data.proposedValue); onFixed(); window.dispatchEvent(new Event("pilot:usage-changed")); toast("Fix drafted", "Review the before/after below."); }
       else toast("No automatable fix yet", j.error);
     } finally { setLoading(false); }
   }
   async function saveEdit() {
     if (!fix) return;
-    // MVP: edited copy is approved as-is by updating proposed value via approve note path —
-    // record edit locally then approve. Full edit endpoint plugs in here.
-    setFix({ ...fix, proposedValue: draft });
-    setEditing(false);
-    toast("Edit saved for review", "Approve below to record the decision.");
+    setLoading(true);
+    try {
+      const result = await fetch(`/api/actions/${fix.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ proposedValue: draft }) }).then((r) => r.json());
+      if (result.ok) { setFix(result.data); setDraft(result.data.proposedValue); setEditing(false); onFixed(); toast("Edit saved", "The updated value is ready for approval."); }
+      else toast("Could not save edit", result.error);
+    } catch { toast("Could not save edit", "Try again shortly."); }
+    finally { setLoading(false); }
   }
 
   return (
@@ -1001,7 +822,7 @@ function IssueDrawer({ issue, onClose, onFixed }: { issue: Issue | null; onClose
         <section className="rounded-xl border border-indigo-200 bg-indigo-50/40 p-4">
           <div className="flex items-center justify-between gap-2">
             <AIChip />
-            {fix && !editing && (
+            {fix && !editing && ["drafted", "awaiting_approval"].includes(fix.status) && (
               <button onClick={() => setEditing(true)} className="flex items-center gap-1 text-[13px] font-medium text-indigo-700 hover:underline">
                 <Pencil className="h-3.5 w-3.5" /> Edit
               </button>
@@ -1028,7 +849,7 @@ function IssueDrawer({ issue, onClose, onFixed }: { issue: Issue | null; onClose
                   <div className="mt-2 space-y-2">
                     <Textarea value={draft} onChange={(e) => setDraft(e.target.value)} aria-label="Edit proposed fix" />
                     <div className="flex gap-2">
-                      <Button size="sm" onClick={saveEdit}>Save edit</Button>
+                      <Button size="sm" disabled={loading} onClick={saveEdit}>Save edit</Button>
                       <Button size="sm" variant="ghost" onClick={() => { setEditing(false); setDraft(fix.proposedValue); }}><X className="h-4 w-4" /> Cancel</Button>
                     </div>
                   </div>
@@ -1044,4 +865,20 @@ function IssueDrawer({ issue, onClose, onFixed }: { issue: Issue | null; onClose
       </div>
     </Drawer>
   );
+}
+
+function RenderingPanel({ projectId, currentMode, onChange }: { projectId: string; currentMode: string; onChange: () => void }) {
+  const [busy, setBusy] = useState(false);
+  async function save(mode: string) {
+    setBusy(true);
+    try {
+      const result = await fetch(`/api/projects/${projectId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ renderMode: mode }) }).then((r) => r.json());
+      if (result.ok) { toast("Rendering updated", "The setting applies to your next audit."); onChange(); }
+      else toast("Could not save rendering", result.error);
+    } catch { toast("Could not save rendering", "Try again shortly."); }
+    finally { setBusy(false); }
+  }
+  return <section className="card mt-5 p-5"><h2 className="section-title">Website rendering</h2><p className="body mt-1">Use JavaScript rendering for content loaded by scripts. HTML-only audits check the page returned directly by your server.</p>
+    <Select className="mt-3 max-w-xs" aria-label="Website rendering" value={currentMode} disabled={busy} onChange={(e) => save(e.target.value)}><option value="javascript">Render JavaScript</option><option value="html">HTML only</option></Select>
+  </section>;
 }

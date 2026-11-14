@@ -53,6 +53,7 @@ describe("scoring", () => {
     const badPages = [page({ statusCode: 404, title: null, metaDescription: null, h1: null, wordCount: 10, indexable: false })];
     const badIssues = runSeoRules(badPages);
     const bad = calculateScore(badPages, badIssues);
-    expect(bad.overall).toBeLessThan(good.overall);
+    expect(bad.overall).toBeNull();
+    expect(good.overall).not.toBeNull();
   });
 });

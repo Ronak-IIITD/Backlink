@@ -1,13 +1,14 @@
 import { z } from "zod";
 
 export const ProjectInputSchema = z.object({
+  renderMode: z.enum(["html", "javascript"]).default("javascript"),
   websiteUrl: z.string().min(4).max(2048),
   name: z.string().min(1).max(120).optional(),
   businessName: z.string().max(120).optional(),
   businessType: z.string().max(120).optional(),
   targetCountry: z.string().max(80).optional(),
   targetCity: z.string().max(80).optional(),
-  targetKeywords: z.array(z.string().max(100)).max(20).optional(),
+  targetKeywords: z.array(z.string().max(100)).max(20).default([]),
   competitors: z.array(z.string().max(2048)).max(10).optional(),
 });
 

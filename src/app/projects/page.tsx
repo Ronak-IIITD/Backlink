@@ -3,7 +3,7 @@ import { Shell } from "@/components/shell";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, ArrowRight, Check, Globe, Building2, Users } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, Globe, Building2 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { Alert, Button, Field, Input, LoadingState, Textarea } from "@/components/ui";
 import { Stagger, StaggerItem, useReducedMotionFlag } from "@/components/motion";
@@ -18,7 +18,7 @@ export default function Projects() {
   const [creating, setCreating] = useState(false);
   const [step, setStep] = useState(0);
   const [err, setErr] = useState("");
-  const [form, setForm] = useState({ websiteUrl: "", businessName: "", businessType: "", targetCountry: "", targetCity: "", targetKeywords: "", competitors: "" });
+  const [form, setForm] = useState({ websiteUrl: "", businessName: "", businessType: "", targetCountry: "", targetCity: "", targetKeywords: "", competitors: "", renderMode: "javascript" });
   const reduce = useReducedMotionFlag();
 
   useEffect(() => {
@@ -38,6 +38,7 @@ export default function Projects() {
     try {
       const payload = {
         websiteUrl: form.websiteUrl.trim(),
+        renderMode: form.renderMode,
         businessName: form.businessName || undefined,
         businessType: form.businessType || undefined,
         targetCountry: form.targetCountry || undefined,
@@ -62,7 +63,7 @@ export default function Projects() {
           <h1 className="page-title">Sites</h1>
           <p className="body mt-1">Each site is an isolated workspace with its own audit history and approval queue.</p>
         </div>
-        {!showWizard && (
+        {!showWizard && projects.length === 0 && (
           <Button onClick={() => setStep(1)} variant="primary" size="sm">New site audit</Button>
         )}
       </div>
@@ -126,11 +127,12 @@ export default function Projects() {
                 transition={{ duration: duration.base, ease: easeOutExpo }}
                 className="mt-5 space-y-4"
               >
-                {step === 1 && (
+                {step === 1 && (<>
                   <Field label="Website URL" hint="We validate and SSRF-check every URL before crawling.">
                     <Input autoFocus value={form.websiteUrl} onChange={(e) => setForm({ ...form, websiteUrl: e.target.value })} placeholder="https://yourbusiness.com" inputMode="url" />
                   </Field>
-                )}
+                  <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={form.renderMode === "javascript"} onChange={(e) => setForm({ ...form, renderMode: e.target.checked ? "javascript" : "html" })} />Render JavaScript so the audit includes content loaded by scripts.</label>
+                </>)}
                 {step === 2 && (
                   <div className="space-y-4">
                     <p className="text-sm text-slate-600">Add context to tailor recommendations, or skip it. Your audit starts as soon as the site is created.</p>
@@ -143,16 +145,13 @@ export default function Projects() {
                     <Field label="Target keywords" hint="One per line; used to prioritize recommendations.">
                       <Textarea value={form.targetKeywords} onChange={(e) => setForm({ ...form, targetKeywords: e.target.value })} placeholder={"emergency plumber Austin\nwater heater repair"} />
                     </Field>
-                    <Field label="Competitors" hint="Optional. One URL per line.">
-                      <Textarea value={form.competitors} onChange={(e) => setForm({ ...form, competitors: e.target.value })} placeholder={"https://competitor-one.com\nhttps://competitor-two.com"} />
-                    </Field>
                   </div>
                 )}
                 {step === 3 && (
                   <div className="space-y-2 text-sm">
                     <Row icon={<Globe className="h-4 w-4" />} label="Website" value={form.websiteUrl} />
                     <Row icon={<Building2 className="h-4 w-4" />} label="Business" value={form.businessName || "—"} />
-                    <Row icon={<Users className="h-4 w-4" />} label="Competitors" value={form.competitors.split("\n").filter(Boolean).length + " tracked"} />
+                    <Row icon={<Globe className="h-4 w-4" />} label="JavaScript" value={form.renderMode === "javascript" ? "Rendered" : "HTML only"} />
                     <div className="rounded-[10px] border border-indigo-200 bg-indigo-50/60 p-3 text-[13px] text-slate-600">
                       Your first crawl starts automatically. We scan up to 30 pages, run 19 checks, and show live progress. Nothing on your site is changed.
                     </div>

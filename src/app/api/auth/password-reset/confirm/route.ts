@@ -8,7 +8,7 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
   const parsed = z.object({
     token: z.string().min(32).max(128),
-    password: z.string().min(12).max(100),
+    password: z.string().min(12).max(100).refine((value) => Buffer.byteLength(value) <= 72),
   }).safeParse(body);
   if (!parsed.success) return fail("Use a valid reset link and a password with at least 12 characters.", 400);
 

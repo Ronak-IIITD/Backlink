@@ -19,7 +19,7 @@ export function runSeoRules(pages: ParsedPage[]): RawIssue[] {
   const push = (i: RawIssue) => {
     if (i.affectedUrls.length) issues.push(i);
   };
-  const htmlPages = pages.filter((p) => p.statusCode === 200);
+  const htmlPages = pages.filter((p) => p.statusCode === 200 && !p.auditError && /html/i.test(p.contentType));
 
   // 1. Broken pages (4xx/5xx or fetch fail status 0)
   const broken = pages.filter((p) => p.statusCode === 0 || (p.statusCode >= 400 && p.statusCode < 600));
@@ -39,7 +39,7 @@ export function runSeoRules(pages: ParsedPage[]): RawIssue[] {
     type: "missing_title", severity: "high",
     title: `${noTitle.length} page(s) missing a title tag`,
     whatWrong: "Title tag is empty or absent on these pages.",
-    whyMatters: "The title is what shows in Google. Without it, Google invents one — usually badly — and clicks drop.",
+    whyMatters: "The title is what shows in Google. Search engines may choose alternative text; review whether the result describes the page clearly.",
     recommendation: "Write a unique 50–60 character title per page with the main topic near the front.",
     impact: "high", difficulty: "easy", affectedUrls: noTitle.map((p) => p.url),
   });
@@ -50,7 +50,7 @@ export function runSeoRules(pages: ParsedPage[]): RawIssue[] {
     type: "title_length", severity: "medium",
     title: `${badTitleLen.length} title(s) too short or too long`,
     whatWrong: "Titles should be 30–60 characters. Shorter wastes space; longer gets cut off in Google.",
-    whyMatters: "Truncated titles get fewer clicks even if you rank.",
+    whyMatters: "Search engines may truncate or rewrite titles; length is a review heuristic, not a ranking guarantee.",
     recommendation: "Rewrite titles to 50–60 characters, front-loading the keyword and location if local.",
     impact: "medium", difficulty: "easy", affectedUrls: badTitleLen.map((p) => p.url),
   });
@@ -68,7 +68,7 @@ export function runSeoRules(pages: ParsedPage[]): RawIssue[] {
         type: "duplicate_title", severity: "high",
         title: `Duplicate title: “${t.slice(0, 60)}” on ${urls.length} pages`,
         whatWrong: `Same title on: ${urls.slice(0, 4).join(", ")}.`,
-        whyMatters: "Google may be unsure which page should rank, so none of them rank well.",
+        whyMatters: "Google may be unsure which page should rank, review whether each title distinguishes its page.",
         recommendation: "Make each title unique — include the page's specific service, topic, or location.",
         impact: "high", difficulty: "easy", affectedUrls: urls,
       });
@@ -81,7 +81,7 @@ export function runSeoRules(pages: ParsedPage[]): RawIssue[] {
     type: "missing_meta_description", severity: "high",
     title: `${noMeta.length} page(s) missing a meta description`,
     whatWrong: "No meta description found.",
-    whyMatters: "The description is your free ad copy under your Google listing. Missing ones mean lower clicks.",
+    whyMatters: "The description is your free ad copy under your Google listing. A useful description can help visitors understand the page.",
     recommendation: "Write 150–160 character descriptions with the benefit + keyword + location/call to action.",
     impact: "medium", difficulty: "easy", affectedUrls: noMeta.map((p) => p.url),
   });
@@ -152,7 +152,7 @@ export function runSeoRules(pages: ParsedPage[]): RawIssue[] {
   });
 
   // 11. Noindex on indexable-looking pages
-  const noindexed = pages.filter((p) => p.robotsDirectives.noindex && p.statusCode === 200);
+  const noindexed = pages.filter((p) => p.robotsDirectives.noindex && p.statusCode === 200 && !p.auditError && /html/i.test(p.contentType));
   push({
     type: "noindex_issue", severity: noindexed.length > 2 ? "critical" : "medium",
     title: `${noindexed.length} live page(s) blocked by noindex`,
@@ -236,7 +236,7 @@ export function runSeoRules(pages: ParsedPage[]): RawIssue[] {
   }
   const orphans = htmlPages.filter((p) => (inlinkCount.get(p.finalUrl) || 0) === 0 && htmlPages.length > 1);
   // exclude homepage/start (first page) from orphan accusation
-  const orphanFiltered = orphans.slice(1);
+  const orphanFiltered = orphans.filter((p) => p !== htmlPages[0]);
   push({
     type: "orphan_pages", severity: "medium",
     title: `${orphanFiltered.length} page(s) with no internal links pointing to them`,

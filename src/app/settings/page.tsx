@@ -27,7 +27,7 @@ export default function Settings() {
     <Shell>
       <Breadcrumb items={[{ label: "Settings" }]} />
       <h1 className="page-title mt-2">Settings</h1>
-      <p className="body mt-1">Conventional, boring, predictable — as settings should be.</p>
+      <p className="body mt-1">Your account, website, and pilot settings.</p>
 
       <div className="mt-6 grid gap-6 md:grid-cols-[200px_1fr]">
         <nav className="h-fit space-y-0.5 md:sticky md:top-6" aria-label="Settings sections">
@@ -67,18 +67,18 @@ export default function Settings() {
               ["Provider", "OpenAI-compatible chat completions"],
               ["Default model", process.env.NEXT_PUBLIC_AI || "gpt-4o-mini (OPENAI_MODEL)"],
               ["Fallback", "Deterministic templates when no key — $0 cost"],
-              ["Cost tracking", "Tokens + USD logged per AgentRun"],
+              ["Cost tracking", "Provider calls metered against workspace budgets"],
             ]} />
           </Section>
           <Section id="crawler" title="Crawler" desc="Same-domain, robots-respecting, rate-limited.">
             <KV rows={[
               ["Scope", "Same registrable domain only"],
               ["Limits", "30 pages · depth 3 · 12s timeout · 400ms pacing"],
-              ["Tuning", "CRAWL_MAX_PAGES · CRAWL_MAX_DEPTH · CRAWL_TIMEOUT_MS · CRAWL_RATE_LIMIT_MS"],
+              ["Rendering", "JavaScript rendering or HTML-only; choose in the site’s Monitoring tab"],
             ]} />
           </Section>
           <Section id="notifications" title="Notifications" desc="Quiet by design.">
-            <KV rows={[["Agent digests", "Off in MVP — queue is pull-based"], ["Failures", "Shown inline with safe retry"]]} />
+            <KV rows={[["Agent digests", "Weekly reports available with paid access"], ["Failures", "Shown inline with safe retry"]]} />
           </Section>
           <Section id="security" title="Security" desc="Approval boundary is enforced.">
             <KV rows={[

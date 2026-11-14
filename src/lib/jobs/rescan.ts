@@ -1,49 +1,19 @@
 import { prisma } from "@/lib/db";
-import { enqueueCrawl } from "./queue";
-
-const MAX_PER_RUN = 25;
-
-function periodMs(freq: string): number {
-  return freq === "monthly" ? 30 * 24 * 3600 * 1000 : 7 * 24 * 3600 * 1000;
-}
-
-export interface RescanResult {
-  projectId: string;
-  websiteUrl: string;
-  action: "enqueued" | "skipped-running" | "skipped-fresh";
-  crawlId?: string;
-  message: string;
-}
-
-/** Find due auto-rescan projects and enqueue crawls. Skips sites with a live run. */
-export async function runDueRescans(now = new Date()): Promise<RescanResult[]> {
-  const projects = await prisma.project.findMany({
-    where: { autoRescan: { in: ["weekly", "monthly"] } },
-    take: MAX_PER_RUN * 2,
-  });
-  const results: RescanResult[] = [];
-  for (const p of projects) {
-    if (results.filter((r) => r.action === "enqueued").length >= MAX_PER_RUN) break;
-    const freq = p.autoRescan || "weekly";
-    const last = p.lastAutoCrawlAt ? new Date(p.lastAutoCrawlAt).getTime() : 0;
-    if (last && now.getTime() - last < periodMs(freq)) {
-      results.push({ projectId: p.id, websiteUrl: p.websiteUrl, action: "skipped-fresh", message: `Last auto-crawl ${new Date(last).toLocaleDateString()} — not due.` });
-      continue;
-    }
-    const running = await prisma.crawl.findFirst({
-      where: { projectId: p.id, status: { in: ["queued", "running"] } },
-    });
-    if (running) {
-      results.push({ projectId: p.id, websiteUrl: p.websiteUrl, action: "skipped-running", message: "A crawl is already running — left alone." });
-      continue;
-    }
-    const crawl = await prisma.crawl.create({
-      data: { projectId: p.id, status: "queued", progress: JSON.stringify({ phase: "queued", message: "Queued by auto-rescan…" }) },
-    });
-    await prisma.project.update({ where: { id: p.id }, data: { lastAutoCrawlAt: now } });
-    await prisma.auditLog.create({ data: { userId: null, action: "crawl.auto_start", entity: "crawl", entityId: crawl.id, meta: JSON.stringify({ frequency: freq }) } });
-    await enqueueCrawl(crawl.id);
-    results.push({ projectId: p.id, websiteUrl: p.websiteUrl, action: "enqueued", crawlId: crawl.id, message: `Auto-rescan enqueued (${freq}).` });
+import { requestCrawl } from "./submit";
+export async function runDueRescans(now = new Date()) {
+  const projects = await prisma.project.findMany({ where: { autoRescan: { in: ["weekly", "monthly"] } }, take: 100, orderBy: { lastAutoCrawlAt: "asc" } });
+  const results: { projectId: string; action: string; crawlId?: string }[] = [];
+  for (const project of projects) {
+    if (results.filter((r) => r.action === "enqueued").length >= 25) break;
+    const interval = (project.autoRescan === "monthly" ? 30 : 7) * 86400000;
+    if (project.lastAutoCrawlAt && now.getTime() - project.lastAutoCrawlAt.getTime() < interval) continue;
+    try {
+      const crawl = await requestCrawl(project.id, null, true);
+      if (crawl.status === "queued") {
+        await prisma.project.update({ where: { id: project.id }, data: { lastAutoCrawlAt: now } });
+        results.push({ projectId: project.id, action: "enqueued", crawlId: crawl.id });
+      } else results.push({ projectId: project.id, action: "skipped-running" });
+    } catch { results.push({ projectId: project.id, action: "skipped-unavailable" }); }
   }
   return results;
 }

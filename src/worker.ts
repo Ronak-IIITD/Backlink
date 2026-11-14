@@ -10,16 +10,19 @@ const connection = new IORedis(redisUrl, { maxRetriesPerRequest: null });
 const concurrency = Math.max(1, Number.parseInt(process.env.CRAWL_WORKER_CONCURRENCY || "2", 10) || 2);
 const worker = new Worker<{ crawlId: string }>(
   "crawl",
-  async (job) => runCrawlJob(job.data.crawlId),
+  async (job) => runCrawlJob(job.data.crawlId, job.attemptsMade + 1 >= (job.opts.attempts || 1)),
   { connection, concurrency }
 );
 
 worker.on("completed", (job) => console.info(`[worker] crawl job completed: ${job.data.crawlId}`));
 worker.on("failed", (job, error) => console.error(`[worker] crawl job failed: ${job?.data.crawlId || "unknown"}`, error));
 worker.on("error", (error) => console.error("[worker] error", error));
+const heartbeatTimer = setInterval(() => { connection.set("worker:heartbeat", String(Date.now()), "EX", 60).catch(() => {}); }, 15000);
+connection.set("worker:heartbeat", String(Date.now()), "EX", 60).catch(() => {});
 console.info(`[worker] crawl worker ready (concurrency ${concurrency})`);
 
 async function shutdown() {
+  clearInterval(heartbeatTimer);
   await worker.close();
   await connection.quit();
   await prisma.$disconnect();

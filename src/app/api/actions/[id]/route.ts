@@ -1,56 +1,39 @@
 import { prisma } from "@/lib/db";
 import { getSessionUser } from "@/lib/auth";
-import { ok, fail } from "@/lib/api";
-
-async function setStatus(id: string, userId: string, status: "approved" | "rejected" | "applied" | "failed", error?: string) {
-  const action = await prisma.aIAction.findUnique({ where: { id } });
-  if (!action) throw new Error("NOT_FOUND");
-  const crawl = await prisma.crawl.findUnique({ where: { id: action.crawlId } });
-  if (!crawl) throw new Error("NOT_FOUND");
-  const project = await prisma.project.findUnique({ where: { id: crawl.projectId } });
-  if (!project) throw new Error("NOT_FOUND");
-  const ms = await prisma.membership.findMany({ where: { userId } });
-  if (!ms.some((m) => m.organizationId === project.organizationId)) throw new Error("FORBIDDEN");
-  const updated = await prisma.aIAction.update({
-    where: { id },
-    data: {
-      status,
-      reviewedBy: userId,
-      reviewedAt: new Date(),
-      ...(status === "approved" ? { } : {}),
-      ...(status === "applied" ? { appliedAt: new Date() } : {}),
-      ...(error ? { error } : {}),
-    },
-  });
-  await prisma.auditLog.create({ data: { userId, action: `action.${status}`, entity: "aiaction", entityId: id } });
-  return updated;
+import { accessibleAction } from "@/lib/pilot/actions";
+import { ok, fail, apiError } from "@/lib/api";
+export async function POST(req: Request, props: { params: Promise<{ id: string }> }) {
+  try {
+    const user = await getSessionUser();
+    if (!user) return fail("UNAUTHORIZED", 401);
+    const { action } = await accessibleAction((await props.params).id, user.id);
+    const body = await req.json().catch(() => ({}));
+    const path = new URL(req.url).pathname;
+    const op = path.endsWith("/approve") ? "approved" : path.endsWith("/reject") ? "rejected" : body.op;
+    if (!["approved", "rejected"].includes(op)) return fail("Invalid review operation", 400);
+    if (!["drafted", "awaiting_approval"].includes(action.status)) return action.status === op ? ok(action) : fail("This fix has already been reviewed.", 409);
+    const updated = await prisma.$transaction(async (tx) => {
+      const changed = await tx.aIAction.updateMany({ where: { id: action.id, status: { in: ["drafted", "awaiting_approval"] } }, data: { status: op, reviewedBy: user.id, reviewedAt: new Date() } });
+      if (changed.count) await tx.auditLog.create({ data: { userId: user.id, action: `action.${op}`, entity: "aiaction", entityId: action.id } });
+      return tx.aIAction.findUniqueOrThrow({ where: { id: action.id } });
+    });
+    return ok(updated);
+  } catch (error) { return apiError(error); }
 }
 
-export async function POST(req: Request, props: { params: Promise<{ id: string }> }) {
-  const params = await props.params;
-  const u = await getSessionUser();
-  if (!u) return fail("UNAUTHORIZED", 401);
-  const url = new URL(req.url);
-  // route: /api/actions/[id]/approve or /reject — detect via referrer? Instead handle both here via ?op=
-  // We expose separate route files that import this; but keep generic: POST body {op}
-  const body = await req.json().catch(() => ({}));
-  const op = body.op || (url.pathname.endsWith("/approve") ? "approved" : url.pathname.endsWith("/reject") ? "rejected" : "approved");
+export async function PATCH(req: Request, props: { params: Promise<{ id: string }> }) {
   try {
-    // MVP: approve → mark approved. Applied requires CMS integration (isolated interface).
-    // We record approval; execution adapters (WordPress/Webflow/API) plug in here later.
-    if (op === "approved") {
-      const a = await setStatus(params.id, u.id, "approved");
-      return ok({ ...a, note: "Approved. Connect your CMS to auto-apply, or copy the proposed value manually." });
-    }
-    if (op === "rejected") {
-      const a = await setStatus(params.id, u.id, "rejected");
-      return ok(a);
-    }
-    return fail("Invalid op", 400);
-  } catch (e: any) {
-    const m = String(e.message);
-    if (m === "NOT_FOUND") return fail("NOT_FOUND", 404);
-    if (m === "FORBIDDEN") return fail("FORBIDDEN", 403);
-    return fail(m, 500);
-  }
+    const user = await getSessionUser();
+    if (!user) return fail("UNAUTHORIZED", 401);
+    const { action } = await accessibleAction((await props.params).id, user.id);
+    const body = await req.json().catch(() => ({}));
+    if (typeof body.proposedValue !== "string" || !body.proposedValue.trim() || body.proposedValue.length > 10000) return fail("Provide a non-empty proposed value of at most 10,000 characters.", 400);
+    const result = await prisma.$transaction(async (tx) => {
+      const changed = await tx.aIAction.updateMany({ where: { id: action.id, status: { in: ["drafted", "awaiting_approval"] } }, data: { proposedValue: body.proposedValue.trim() } });
+      if (!changed.count) return null;
+      await tx.auditLog.create({ data: { userId: user.id, action: "action.edited", entity: "aiaction", entityId: action.id } });
+      return tx.aIAction.findUniqueOrThrow({ where: { id: action.id } });
+    });
+    return result ? ok(result) : fail("Only fixes awaiting review can be edited.", 409);
+  } catch (error) { return apiError(error); }
 }

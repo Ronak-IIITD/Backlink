@@ -1,3 +1,5 @@
+const escapeHtml = (value: string) => value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+
 /** Report emails: Resend when configured, honest log-only mode otherwise. */
 
 export interface ReportEmailInput {
@@ -9,9 +11,11 @@ export interface ReportEmailInput {
   whiteLabel: boolean;
   agencyName?: string | null;
   reportDate: Date;
+  idempotencyKey?: string;
 }
 
 export function buildReportHtml(r: ReportEmailInput): string {
+  r = { ...r, projectName: escapeHtml(r.projectName), websiteUrl: escapeHtml(r.websiteUrl), agencyName: r.agencyName ? escapeHtml(r.agencyName) : r.agencyName };
   const brand = r.whiteLabel ? (r.agencyName || "Your Agency") : "SEO Agent";
   const preheader = r.score != null ? `SEO health ${r.score}/100 for ${r.projectName}` : `SEO report for ${r.projectName}`;
   const body = (r.markdown || "No report yet.")
@@ -32,22 +36,23 @@ ${body}
 </body></html>`;
 }
 
-async function deliver(to: string, subject: string, html: string, brand: string): Promise<{ sent: boolean; mode: "resend" | "log"; id?: string; message: string }> {
+async function deliver(to: string, subject: string, html: string, brand: string, idempotencyKey?: string): Promise<{ sent: boolean; mode: "resend" | "log"; id?: string; message: string }> {
   const key = process.env.RESEND_API_KEY;
   const from = process.env.RESEND_FROM || "reports@seo-agent.app";
   if (!key) {
-    console.log(`[email:log] to=${to} subject=${subject} brand=${brand}`);
+    console.info("[email] provider not configured; no email sent");
     return { sent: false, mode: "log", message: "Email provider not configured (RESEND_API_KEY). Logged only — set RESEND_API_KEY to actually send." };
   }
   try {
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
-      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}) },
+      signal: AbortSignal.timeout(15000), redirect: "error",
       body: JSON.stringify({ from, to, subject, html }),
     });
     if (!res.ok) {
-      const t = await res.text().catch(() => "");
-      return { sent: false, mode: "resend", message: `Resend returned ${res.status}: ${t.slice(0, 300)}` };
+      await res.body?.cancel();
+      return { sent: false, mode: "resend", message: `Email delivery failed (${res.status}). Please retry.` };
     }
     const j = await res.json().catch(() => ({}));
     return { sent: true, mode: "resend", id: j.id, message: "Sent via Resend." };
@@ -61,7 +66,7 @@ export async function sendReportEmail(r: ReportEmailInput): Promise<{ sent: bool
   const subject = r.score != null
     ? `SEO report: ${r.projectName} is ${r.score}/100`
     : `SEO report: ${r.projectName}`;
-  return deliver(r.to, subject, html, r.whiteLabel ? r.agencyName || "agency" : "SEO Agent");
+  return deliver(r.to, subject, html, r.whiteLabel ? r.agencyName || "agency" : "SEO Agent", r.idempotencyKey);
 }
 
 export async function sendPasswordResetEmail(to: string, resetUrl: string) {
@@ -90,6 +95,7 @@ export interface AlertEmailInput {
 }
 
 export function buildAlertHtml(a: AlertEmailInput): string {
+  a = { ...a, projectName: escapeHtml(a.projectName), websiteUrl: escapeHtml(a.websiteUrl), agencyName: a.agencyName ? escapeHtml(a.agencyName) : a.agencyName };
   const brand = a.whiteLabel ? (a.agencyName || "Your Agency") : "SEO Agent";
   const appUrl = (process.env.APP_URL || "").replace(/\/$/, "");
   const auditUrl = `${appUrl}/projects/${a.projectId}`;

@@ -3,14 +3,14 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import React, { useEffect, useState } from "react";
 import {
-  LayoutDashboard, AlertTriangle, Bot, FileText, KeyRound, Users, Link2,
+  LayoutDashboard, AlertTriangle, Bot, FileText, KeyRound,
   BarChart3, Settings, LogOut, ChevronsUpDown, Search, LifeBuoy, FolderKanban, Check,
-  Building2,
 } from "lucide-react";
 import { clsx } from "clsx";
 import { Modal, toast, ToastHost } from "./ui";
 import { AnimatePresence, motion } from "motion/react";
 import { overlayFade, panelRise, staggerContainer, staggerItem } from "@/lib/motion";
+import { PilotAccountBanner } from "./pilot-account";
 import { preferredProject, rememberProject } from "@/lib/project-selection";
 
 const NAV = [
@@ -19,10 +19,7 @@ const NAV = [
   { href: "/agent", label: "AI Agent", icon: Bot },
   { href: "/content", label: "Content", icon: FileText },
   { href: "/keywords", label: "Keywords", icon: KeyRound },
-  { href: "/competitors", label: "Competitors", icon: Users },
-  { href: "/backlinks", label: "Backlinks", icon: Link2 },
   { href: "/reports", label: "Reports", icon: BarChart3 },
-  { href: "/agency", label: "Agency", icon: Building2 },
 ];
 
 export function Shell({ children }: { children: React.ReactNode }) {
@@ -148,7 +145,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
           <span className="truncate text-sm font-semibold">{current?.name || "SEO Agent"}</span>
           <button onClick={() => setCmdOpen(true)} aria-label="Search" className="ml-auto rounded-lg border border-slate-200 p-1.5"><Search className="h-4 w-4" /></button>
         </header>
-        <main className="mx-auto w-full max-w-[1080px] flex-1 px-4 py-6 md:px-8 md:py-8">{children}</main>
+        <main className="mx-auto w-full max-w-[1080px] flex-1 px-4 py-6 md:px-8 md:py-8"><PilotAccountBanner />{children}</main>
       </div>
 
       {/* Mobile drawer */}
@@ -284,10 +281,7 @@ const NAV_FILTER = [
   { label: "AI Agent", href: "/agent" },
   { label: "Content", href: "/content" },
   { label: "Keywords", href: "/keywords" },
-  { label: "Competitors", href: "/competitors" },
-  { label: "Backlinks", href: "/backlinks" },
   { label: "Reports", href: "/reports" },
-  { label: "Agency", href: "/agency" },
   { label: "Settings", href: "/settings" },
 ];
 

@@ -1,6 +1,7 @@
+import { requirePaid } from "@/lib/pilot/access";
 import { prisma } from "@/lib/db";
 import { getSessionUser, assertProjectAccess } from "@/lib/auth";
-import { ok, fail, toStatus } from "@/lib/api";
+import { ok, fail, apiError } from "@/lib/api";
 import { z } from "zod";
 
 const EVENTS = ["critical", "score_drop", "crawl_failed"] as const;
@@ -34,7 +35,7 @@ export async function GET(_: Request, props: { params: Promise<{ id: string }> }
     const rows = await prisma.notificationPref.findMany({ where: { projectId: params.id }, orderBy: { createdAt: "desc" }, take: 20 });
     return ok({ prefs: rows.map(redact), emailMode: process.env.RESEND_API_KEY ? "resend" : "log", events: EVENTS });
   } catch (e: any) {
-    return fail(e.message || "failed", toStatus(e));
+    return apiError(e);
   }
 }
 
@@ -43,25 +44,28 @@ export async function POST(req: Request, props: { params: Promise<{ id: string }
   try {
     const u = await getSessionUser();
     if (!u) return fail("UNAUTHORIZED", 401);
-    await assertProjectAccess(u.id, params.id);
+    const project = await assertProjectAccess(u.id, params.id);
+    await requirePaid(prisma, project.organizationId);
     const body = await req.json().catch(() => ({}));
     const parsed = CreateSchema.safeParse(body);
     if (!parsed.success) return fail("Invalid input: " + parsed.error.issues[0]?.message, 400);
+    if (parsed.data.email.toLowerCase().trim() !== u.email) return fail("Alerts can only be sent to your verified account email.", 400);
+    if (await prisma.notificationPref.count({ where: { projectId: params.id } }) >= 1) return fail("One alert preference is included in the pilot.", 409);
     const row = await prisma.notificationPref.create({
       data: {
         projectId: params.id,
         email: parsed.data.email.toLowerCase().trim(),
         events: JSON.stringify(parsed.data.events),
         scoreDropThreshold: parsed.data.scoreDropThreshold ?? 10,
-        whiteLabel: parsed.data.whiteLabel,
-        agencyName: parsed.data.agencyName?.trim() || null,
+        whiteLabel: false,
+        agencyName: null,
         active: parsed.data.active,
       },
     });
     await prisma.auditLog.create({ data: { userId: u.id, action: "notify.create", entity: "project", entityId: params.id, meta: JSON.stringify({ email: row.email, events: parsed.data.events }) } });
     return ok(redact(row), 201);
   } catch (e: any) {
-    return fail(e.message || "failed", toStatus(e));
+    return apiError(e);
   }
 }
 
@@ -86,6 +90,6 @@ export async function DELETE(req: Request, props: { params: Promise<{ id: string
     await prisma.notificationPref.delete({ where: { id: prefId } });
     return ok({ deleted: true });
   } catch (e: any) {
-    return fail(e.message || "failed", toStatus(e));
+    return apiError(e);
   }
 }

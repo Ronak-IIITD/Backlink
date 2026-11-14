@@ -1,0 +1,72 @@
+name: Pilot checks
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: seo_test
+          POSTGRES_PASSWORD: seo_test
+          POSTGRES_DB: seo_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U seo_test -d seo_test"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      DATABASE_URL: postgresql://seo_test:seo_test@localhost:5432/seo_test
+      TEST_DATABASE_URL: postgresql://seo_test:seo_test@localhost:5432/seo_test
+      TEST_REDIS_URL: redis://localhost:6379
+      SESSION_SECRET: ci-only-session-secret-at-least-32-characters
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - run: npx prisma generate --schema prisma/schema.production.prisma
+      - run: npm run db:migrate:deploy
+      - name: Check migration matches production schema
+        run: npx prisma migrate diff --from-url "$DATABASE_URL" --to-schema-datamodel prisma/schema.production.prisma --exit-code
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+      - name: Exercise production startup and real account workflow
+        env:
+          REDIS_URL: redis://localhost:6379
+          APP_URL: http://127.0.0.1:3100
+          E2E_BASE_URL: http://127.0.0.1:3100
+          E2E_DATABASE_URL: postgresql://seo_test:seo_test@localhost:5432/seo_test
+          SMOKE_TEST_BASE_URL: http://127.0.0.1:3100
+        run: |
+          npm run worker > /tmp/seo-worker.log 2>&1 &
+          worker_pid=$!
+          npm run start -- -p 3100 > /tmp/seo-web.log 2>&1 &
+          web_pid=$!
+          trap 'kill "$worker_pid" "$web_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:3100/api/health > /dev/null; then break; fi
+            sleep 1
+          done
+          npm run smoke
+          node scripts/e2e-pilot.mjs
+      - name: Upload failed startup logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: startup-logs
+          path: /tmp/seo-*.log
