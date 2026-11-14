@@ -94,10 +94,18 @@ export async function runCrawlJob(crawlId: string, finalAttempt = true) {
       websiteUrl: crawl.project.websiteUrl, rawIssues: issues, score }).catch(() => {});
   } catch (error) {
     console.error(JSON.stringify({ event: "audit.failed", crawlId, finalAttempt, type: (error as Error).name }));
-    await prisma.crawl.updateMany({ where: { id: crawlId, leaseToken }, data: { status: finalAttempt ? "failed" : "queued", finishedAt: finalAttempt ? new Date() : null,
+    const failed = await prisma.crawl.updateMany({ where: { id: crawlId, leaseToken }, data: { status: finalAttempt ? "failed" : "queued", finishedAt: finalAttempt ? new Date() : null,
       activeProjectId: finalAttempt ? null : crawl.projectId, leaseToken: null, leaseExpiresAt: null,
       error: (error as Error).message.slice(0, 500), progress: JSON.stringify({ phase: finalAttempt ? "failed" : "queued", message: finalAttempt ? (error as Error).message : "Retrying audit after a temporary failure…" }) } });
-    if (finalAttempt) await settleUsage(crawl.reservationId, false);
+    if (finalAttempt && failed.count) {
+      await settleUsage(crawl.reservationId, false);
+      await checkAndSendAlerts({
+        projectId: crawl.projectId, crawlId, projectName: crawl.project.name,
+        websiteUrl: crawl.project.websiteUrl, rawIssues: [],
+        score: { overall: null, categories: [], counts: { critical: 0, high: 0, medium: 0, low: 0 } },
+        failed: { error: (error as Error).message.slice(0, 300) },
+      }).catch(() => {});
+    }
     throw error;
   } finally { clearInterval(heartbeat); }
 }

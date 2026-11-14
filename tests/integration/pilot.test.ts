@@ -152,17 +152,26 @@ describe("pilot accounts and durable limits", () => {
     expect((await prisma.crawl.findUniqueOrThrow({ where: { id: crawl.id } })).status).toBe("completed");
     expect((await prisma.usageReservation.findUniqueOrThrow({ where: { id: crawl.reservationId! } })).status).toBe("committed");
   });
-  it("propagates worker failures for retry and returns allowance after the final failure", async () => {
+  it("propagates retries, refunds final failure, and sends one terminal failure notification", async () => {
     const data = await seed("paid", 8);
     const { requestCrawl } = await import("@/lib/jobs/submit");
     const crawl = await requestCrawl(data.project.id, data.user.id);
     const crawler = await import("@/lib/crawler/crawler"); vi.mocked(crawler.crawlSite).mockRejectedValue(new Error("Upstream unavailable"));
     const jobs = await vi.importActual<typeof import("@/lib/jobs/queue")>("@/lib/jobs/queue");
-    await expect(jobs.runCrawlJob(crawl.id, false)).rejects.toThrow("Upstream unavailable");
-    expect((await prisma.crawl.findUniqueOrThrow({ where: { id: crawl.id } })).status).toBe("queued");
-    await expect(jobs.runCrawlJob(crawl.id, true)).rejects.toThrow("Upstream unavailable");
-    expect((await prisma.accessPeriod.findUniqueOrThrow({ where: { id: data.period.id } })).auditsUsed).toBe(0);
-    expect((await prisma.crawl.findUniqueOrThrow({ where: { id: crawl.id } })).activeProjectId).toBeNull();
+    await prisma.notificationPref.create({ data: { projectId: data.project.id, email: data.user.email, events: JSON.stringify(["crawl_failed"]) } });
+    const email = await import("@/lib/email");
+    const sendAlert = vi.spyOn(email, "sendAlertEmail").mockResolvedValue({ sent: true, mode: "resend", message: "Sent" });
+    try {
+      await expect(jobs.runCrawlJob(crawl.id, false)).rejects.toThrow("Upstream unavailable");
+      expect((await prisma.crawl.findUniqueOrThrow({ where: { id: crawl.id } })).status).toBe("queued");
+      expect(sendAlert).not.toHaveBeenCalled();
+      await expect(jobs.runCrawlJob(crawl.id, true)).rejects.toThrow("Upstream unavailable");
+      expect((await prisma.accessPeriod.findUniqueOrThrow({ where: { id: data.period.id } })).auditsUsed).toBe(0);
+      expect((await prisma.crawl.findUniqueOrThrow({ where: { id: crawl.id } })).activeProjectId).toBeNull();
+      expect(sendAlert).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ kind: "crawl_failed", to: data.user.email }));
+      await jobs.runCrawlJob(crawl.id, true);
+      expect(sendAlert).toHaveBeenCalledTimes(1);
+    } finally { sendAlert.mockRestore(); }
   });
 
   it("persists edits before review and prevents editing approved fixes", async () => {
