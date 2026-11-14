@@ -130,7 +130,7 @@ export async function strategistAgent(
       BASE_RULES + ` Turn issues into a prioritized action queue. Follow the provided plan order unless severity demands otherwise. Buckets: DO_THIS_NOW (blocking), DO_THIS_NEXT (high value), WATCH, NO_ACTION. Only cite URLs from the provided samples. Return {"recs":[{category,priority(0-100),bucket,whatWrong,whyMatters,whatToChange,canAutomate,needsApproval,relatedIssueType,affectedUrls,confidence}]}`,
       user,
       StrategyListSchema,
-      { maxTokens: 2000 }
+      { maxTokens: 2000, projectId: opts?.projectId }
     );
     if (validated) {
       await emit(`Verifying ${validated.data.recs.length} AI drafts against crawl evidence…`);
@@ -198,7 +198,7 @@ export async function fixGeneratorAgent(
     BASE_RULES + ` Generate ONE concrete fix for this issue on the given real page. Return {"kind":string,"current":string|null,"proposed":string,"reason":string}. Proposed must be copy-paste ready, 150-160 chars for meta, 50-60 for title. Cite only the given URL. No guarantees.`,
     JSON.stringify(ctx),
     FixSchema,
-    { maxTokens: 600 }
+    { maxTokens: 600, projectId: opts?.projectId }
   );
   if (validated) {
     const shaped = enforceFixShape(validated.data as { kind: string; current: string | null; proposed: string; reason: string }, issue);
@@ -213,7 +213,7 @@ export async function fixGeneratorAgent(
   const llm = await callLLM(
     BASE_RULES + ` Generate ONE concrete fix for this issue on the given real page. Return {"kind":string,"current":string|null,"proposed":string,"reason":string}.`,
     JSON.stringify(ctx),
-    { json: true, maxTokens: 600, retries: 0 }
+    { json: true, maxTokens: 600, retries: 0, projectId: opts?.projectId }
   );
   if (llm) {
     try {

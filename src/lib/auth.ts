@@ -61,7 +61,7 @@ export async function getSessionUser() {
     const uid = (payload as any).uid as string;
     if (!sid || !uid) return null;
     const sess = await prisma.session.findUnique({ where: { tokenHash: sid } });
-    if (!sess || sess.expiresAt < new Date()) return null;
+    if (!sess || sess.userId !== uid || sess.expiresAt < new Date()) return null;
     const user = await prisma.user.findUnique({ where: { id: uid } });
     return user;
   } catch {

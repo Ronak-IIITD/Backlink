@@ -8,7 +8,7 @@ import { sendPasswordResetEmail } from "@/lib/email";
 const genericResponse = () => ok({ message: "If an account exists for that email, a reset link will arrive shortly." });
 
 export async function POST(req: Request) {
-  if (!rateLimit(`password-reset:${clientIp(req)}`, 5, 15 * 60_000).ok) {
+  if (!(await rateLimit(`password-reset:${clientIp(req)}`, 5, 15 * 60_000)).ok) {
     return fail("Too many requests. Try again later.", 429);
   }
   const body = await req.json().catch(() => ({}));

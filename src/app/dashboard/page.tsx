@@ -76,10 +76,10 @@ export default function Dashboard() {
       {/* Health + counts: calm entrance, numbers settle into place */}
       <Stagger gap={0.06} className="grid gap-4 md:grid-cols-[300px_1fr]">
         <StaggerItem className="card flex items-center gap-4 p-5">
-          <AnimatedScoreRing score={score ?? 0} />
+          {score !== null ? <AnimatedScoreRing score={score} /> : <span className="text-sm text-slate-500">Not scored yet</span>}
           <div>
             <div className="eyebrow">SEO health</div>
-            <div className="text-sm text-slate-600">Continuous monitoring</div>
+            <div className="text-sm text-slate-600">Latest audited sample</div>
             <Link href={`/projects/${pid}`} className="mt-1 inline-flex items-center gap-1 text-[13px] font-medium text-indigo-700 transition-colors hover:text-indigo-900">
               Open audit <ArrowRight className="h-3.5 w-3.5" aria-hidden />
             </Link>

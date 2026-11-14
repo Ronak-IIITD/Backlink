@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { prisma } from "@/lib/db";
 import { crawlSite } from "@/lib/crawler/crawler";
 import { getCrawlDefaults } from "@/lib/crawler/types";
@@ -5,249 +6,126 @@ import { hashBody } from "@/lib/crawler/parser";
 import { runSeoRules, sortIssues } from "@/lib/audit/rules";
 import { calculateScore } from "@/lib/audit/scoring";
 import { strategistAgent, contentOppsAgent } from "@/lib/ai/orchestrator";
+import { currentAccess, settleUsage, settleUsageTx, transaction } from "@/lib/pilot/access";
+import { verifyReportedFixes } from "./verification";
 import { checkAndSendAlerts } from "./alerts";
 import { Queue } from "bullmq";
 import IORedis from "ioredis";
 
-/**
- * Crawl processing shared by the local runner and production BullMQ worker.
- * Flow: queued → running (crawl → audit → AI) → completed|failed. UI polls.
- */
-
-async function setProgress(crawlId: string, phase: string, message: string, extra?: any) {
-  await prisma.crawl.update({
-    where: { id: crawlId },
-    data: { progress: JSON.stringify({ phase, message, ...extra, at: new Date().toISOString() }) },
-  }).catch(() => {});
-}
-
-export async function runCrawlJob(crawlId: string) {
-  const started = Date.now();
+export async function runCrawlJob(crawlId: string, finalAttempt = true) {
+  const crawl = await prisma.crawl.findUnique({ where: { id: crawlId }, include: { project: true } });
+  if (!crawl || !["queued", "running"].includes(crawl.status)) return;
+  const leaseToken = randomUUID(), startedAt = new Date();
+  const claimed = await prisma.crawl.updateMany({ where: { id: crawlId, status: { in: ["queued", "running"] }, activeProjectId: crawl.projectId, OR: [{ leaseExpiresAt: null }, { leaseExpiresAt: { lt: startedAt } }] },
+    data: { status: "running", startedAt, leaseToken, leaseExpiresAt: new Date(Date.now() + 1200000), error: null } });
+  if (!claimed.count) throw new Error("Crawl already has a live worker lease");
+  const heartbeat = setInterval(() => {
+    prisma.crawl.updateMany({ where: { id: crawlId, leaseToken }, data: { leaseExpiresAt: new Date(Date.now() + 1200000) } }).catch(() => {});
+  }, 60000);
+  const progress = async (phase: string, message: string, extra: object = {}) => {
+    const updated = await prisma.crawl.updateMany({ where: { id: crawlId, leaseToken }, data: { progress: JSON.stringify({ phase, message, ...extra, at: new Date().toISOString() }) } });
+    if (!updated.count) throw new Error("Worker lease was lost");
+  };
   try {
-    const crawl = await prisma.crawl.findUnique({ where: { id: crawlId }, include: { project: true } });
-    if (!crawl) return;
-    if (crawl.status === "completed") return;
+    await currentAccess(prisma, crawl.project.organizationId);
     await prisma.$transaction([
-      prisma.aIAction.deleteMany({ where: { crawlId } }),
-      prisma.page.deleteMany({ where: { crawlId } }),
-      prisma.sEOIssue.deleteMany({ where: { crawlId } }),
-      prisma.recommendation.deleteMany({ where: { crawlId } }),
-      prisma.report.deleteMany({ where: { crawlId } }),
-      prisma.agentRun.deleteMany({ where: { crawlId } }),
+      prisma.aIAction.deleteMany({ where: { crawlId } }), prisma.sEOIssue.deleteMany({ where: { crawlId } }),
+      prisma.recommendation.deleteMany({ where: { crawlId } }), prisma.page.deleteMany({ where: { crawlId } }),
+      prisma.report.deleteMany({ where: { crawlId } }), prisma.agentRun.deleteMany({ where: { crawlId } }),
+      prisma.contentOpportunity.deleteMany({ where: { crawlId } }),
     ]);
-    await prisma.crawl.update({ where: { id: crawlId }, data: { status: "running", startedAt: new Date() } });
-    await setProgress(crawlId, "crawl", "Scanning website…");
-
-    const opts = getCrawlDefaults();
-    const { pages, errors } = await crawlSite(crawl.project.websiteUrl, opts, async (p) => {
-      await setProgress(crawlId, p.phase, p.message, { found: p.found, crawled: p.crawled });
-      await prisma.crawl.update({ where: { id: crawlId }, data: { pagesFound: p.found, pagesCrawled: p.crawled } }).catch(() => {});
+    const { pages, errors, coverage } = await crawlSite(crawl.project.websiteUrl, {
+      ...getCrawlDefaults(), renderMode: crawl.project.renderMode === "html" ? "html" : "javascript",
+      organizationId: crawl.project.organizationId, crawlId,
+    }, async (p) => {
+      await progress(p.phase, p.message, { found: p.found, crawled: p.crawled });
+      await prisma.crawl.updateMany({ where: { id: crawlId, leaseToken }, data: { pagesFound: p.found, pagesCrawled: p.crawled } });
     });
-
-    await setProgress(crawlId, "audit", `Analyzing ${pages.length} pages…`);
-    // persist pages
+    await prisma.crawl.updateMany({ where: { id: crawlId, leaseToken }, data: { coverage: JSON.stringify(coverage), scoreVersion: 2 } });
     for (const p of pages) {
-      await prisma.page.create({
-        data: {
-          crawlId,
-          url: p.url.slice(0, 1000),
-          finalUrl: p.finalUrl.slice(0, 1000),
-          statusCode: p.statusCode,
-          contentType: (p.contentType || "").slice(0, 200),
-          title: (p.title || null)?.slice(0, 500),
-          metaDescription: (p.metaDescription || null)?.slice(0, 1000),
-          canonical: (p.canonical || null)?.slice(0, 1000),
-          h1: (p.h1 || null)?.slice(0, 500),
-          h2s: JSON.stringify(p.h2s),
-          bodyText: p.bodyText.slice(0, 20000),
-          bodyHash: hashBody(p.bodyText),
-          wordCount: p.wordCount,
-          links: JSON.stringify(p.links.slice(0, 200)),
-          images: JSON.stringify(p.images.slice(0, 60)),
-          altMissingCount: p.altMissingCount,
-          og: JSON.stringify(p.og),
-          schemaTypes: JSON.stringify(p.schemaTypes),
-          robotsDirectives: JSON.stringify(p.robotsDirectives),
-          indexable: p.indexable,
-          sizeBytes: p.sizeBytes,
-          loadMs: p.loadMs,
-          depth: p.depth,
-        },
-      });
+      await prisma.page.create({ data: {
+        crawlId, url: p.url.slice(0, 2000), finalUrl: p.finalUrl.slice(0, 2000), statusCode: p.statusCode,
+        contentType: p.contentType.slice(0, 200), title: p.title?.slice(0, 500), metaDescription: p.metaDescription?.slice(0, 1000),
+        canonical: p.canonical?.slice(0, 2000), h1: p.h1?.slice(0, 500), h1Count: p.h1Count,
+        h2s: JSON.stringify(p.h2s), bodyText: p.bodyText.slice(0, 20000), bodyHash: hashBody(p.bodyText), wordCount: p.wordCount,
+        links: JSON.stringify(p.links.slice(0, 200)), images: JSON.stringify(p.images.slice(0, 100)), altMissingCount: p.altMissingCount,
+        og: JSON.stringify(p.og), schemaTypes: JSON.stringify(p.schemaTypes), robotsDirectives: JSON.stringify(p.robotsDirectives),
+        indexable: p.indexable, sizeBytes: p.sizeBytes, loadMs: p.loadMs, depth: p.depth, rendered: !!p.rendered, auditError: p.auditError?.slice(0, 500),
+      } });
     }
-
-    // deterministic audit
-    const rawIssues = sortIssues(runSeoRules(pages));
-    await setProgress(crawlId, "ai", "Generating recommendations…");
-    for (const ri of rawIssues) {
-      await prisma.sEOIssue.create({
-        data: {
-          crawlId,
-          type: ri.type,
-          severity: ri.severity,
-          title: ri.title.slice(0, 300),
-          whatWrong: ri.whatWrong.slice(0, 2000),
-          whyMatters: ri.whyMatters.slice(0, 2000),
-          recommendation: ri.recommendation.slice(0, 2000),
-          impact: ri.impact,
-          difficulty: ri.difficulty,
-          affectedUrls: JSON.stringify(ri.affectedUrls.slice(0, 50)),
-          affectedCount: ri.affectedUrls.length,
-          source: "rule",
-        },
-      });
+    if (!coverage.audited) throw new Error(`No usable HTML could be audited. ${errors[0]?.error?.slice(0, 200) || "Review the website and rendering settings, then retry."}`);
+    await progress("audit", `Analyzing ${coverage.audited} audited pages…`);
+    const issues = sortIssues(runSeoRules(pages));
+    for (const issue of issues) {
+      await prisma.sEOIssue.create({ data: { ...issue, crawlId, source: "rule", title: issue.title.slice(0, 300),
+        whatWrong: issue.whatWrong.slice(0, 2000), whyMatters: issue.whyMatters.slice(0, 2000), recommendation: issue.recommendation.slice(0, 2000),
+        affectedUrls: JSON.stringify(issue.affectedUrls), affectedCount: issue.affectedUrls.length } });
     }
-
-    // AI orchestration: planner → strategist + content in parallel → verifier already inside agents
-    // Streams granular AI steps to progress so UI polling feels live.
-    const project = crawl.project as any;
-    await setProgress(crawlId, "ai", "Planning ranked actions…", { stage: "planner", step: 1, total: 5 });
-    const aiStart = Date.now();
-    const aiStep = async (msg: string) => {
-      await setProgress(crawlId, "ai", msg, { stage: "agent", at: new Date().toISOString() });
-    };
-    const [stratRes, opps] = await Promise.all([
-      strategistAgent(
-        pages,
-        rawIssues,
-        {
-          businessName: project.businessName,
-          targetCountry: project.targetCountry,
-          targetCity: project.targetCity,
-        },
-        { onStep: aiStep, projectId: crawl.projectId }
-      ),
-      (async () => {
-        await aiStep(`Finding content gaps across ${pages.length} pages…`);
-        const o = await contentOppsAgent(pages);
-        await aiStep(`Found ${o.length} content opportunities`);
-        return o;
-      })(),
+    const auditedPages = pages.filter((p) => !p.auditError);
+    const aiStarted = Date.now();
+    const [strategy, opportunities] = await Promise.all([
+      strategistAgent(auditedPages, issues, { businessName: crawl.project.businessName || undefined, targetCountry: crawl.project.targetCountry || undefined, targetCity: crawl.project.targetCity || undefined },
+        { projectId: crawl.projectId, onStep: (message) => progress("ai", message) }),
+      contentOppsAgent(auditedPages),
     ]);
-    await setProgress(crawlId, "ai", `Verified ${stratRes.recs.length} actions against crawl evidence…`, { stage: "verifier" });
-    const { recs, plan, usage } = stratRes;
-    for (const r of recs) {
-      await prisma.recommendation.create({
-        data: {
-          crawlId,
-          category: r.category,
-          priority: r.priority,
-          bucket: r.bucket,
-          whatWrong: r.whatWrong.slice(0, 2000),
-          whyMatters: r.whyMatters.slice(0, 2000),
-          whatToChange: r.whatToChange.slice(0, 2000),
-          canAutomate: r.canAutomate,
-          needsApproval: r.needsApproval,
-          relatedIssueType: r.relatedIssueType,
-          affectedUrls: JSON.stringify(r.affectedUrls.slice(0, 20)),
-          confidence: r.confidence,
-        },
-      });
+    for (const rec of strategy.recs) {
+      await prisma.recommendation.create({ data: { ...rec, crawlId, affectedUrls: JSON.stringify(rec.affectedUrls) } });
     }
-    await prisma.agentRun.create({
-      data: {
-        projectId: crawl.projectId, crawlId, agent: "strategist",
-        input: JSON.stringify({ pages: pages.length, issues: rawIssues.length, plan: plan.steps.length }).slice(0, 5000),
-        output: JSON.stringify({ recs: recs.length, plan: plan.steps.map((s) => s.id), createdBy: plan.createdBy }).slice(0, 5000),
-        tokensUsed: usage.tokens, costUsd: usage.cost, durationMs: usage.durationMs ?? (Date.now() - aiStart), status: "completed",
-      },
+    await prisma.agentRun.create({ data: { projectId: crawl.projectId, crawlId, agent: "strategist", tokensUsed: strategy.usage.tokens,
+      costUsd: strategy.usage.cost, durationMs: Date.now() - aiStarted, output: JSON.stringify({ model: strategy.usage.model, recommendations: strategy.recs.length }) } });
+    for (const opportunity of opportunities) {
+      await prisma.contentOpportunity.create({ data: { ...opportunity, projectId: crawl.projectId, crawlId, outline: JSON.stringify(opportunity.outline) } });
+    }
+    const score = calculateScore(pages, issues);
+    const summary = { ...score, coverage };
+    const markdown = `# SEO report — ${crawl.project.websiteUrl}\n\nHealth: ${score.overall ?? "Unavailable"}/100\n\nCoverage: ${coverage.audited} audited of ${coverage.attempted} attempted URLs${coverage.partial ? "; incomplete coverage" : ""}.\n\n## Prioritized findings\n${issues.slice(0, 5).map((issue) => `- [${issue.severity}] ${issue.title}`).join("\n") || "No findings in the audited sample."}\n\n## Next actions\n${strategy.recs.slice(0, 4).map((rec) => `- ${rec.whatWrong}: ${rec.whatToChange}`).join("\n")}\n\nThese are audit heuristics, not a prediction of rankings. ${errors.length} crawl warning(s).`;
+    await prisma.report.create({ data: { projectId: crawl.projectId, crawlId, summary: JSON.stringify(summary), markdown } });
+    await verifyReportedFixes(crawl.projectId, crawlId, pages, issues, startedAt);
+    await transaction(async (tx) => {
+      await settleUsageTx(tx, crawl.reservationId, true);
+      const completed = await tx.crawl.updateMany({ where: { id: crawlId, leaseToken }, data: { status: "completed", finishedAt: new Date(), activeProjectId: null,
+      leaseToken: null, leaseExpiresAt: null, pagesFound: coverage.discovered, pagesCrawled: coverage.audited,
+      progress: JSON.stringify({ phase: "done", message: coverage.partial ? "Audit complete with limited coverage" : "Audit complete" }) } });
+      if (!completed.count) throw new Error("Worker lease was lost before completion");
     });
-    await prisma.agentRun.create({
-      data: {
-        projectId: crawl.projectId, crawlId, agent: "content",
-        input: JSON.stringify({ pages: pages.length }).slice(0, 2000),
-        output: JSON.stringify({ opps: opps.length }).slice(0, 2000),
-        tokensUsed: 0, costUsd: 0, durationMs: Date.now() - aiStart, status: "completed",
-      },
-    });
-    for (const o of opps) {
-      await prisma.contentOpportunity.create({
-        data: {
-          projectId: crawl.projectId, topic: o.topic.slice(0, 300), intent: o.intent,
-          targetKeyword: o.targetKeyword.slice(0, 200), pageType: o.pageType,
-          outline: JSON.stringify(o.outline), suggestedTitle: o.suggestedTitle.slice(0, 300),
-        },
+    console.info(JSON.stringify({ event: "audit.completed", crawlId, organizationId: crawl.project.organizationId, durationMs: Date.now() - startedAt.getTime(), coverage }));
+    // Coverage changes are not evidence of a score drop. Never compare partial audits.
+    if (!coverage.partial) await checkAndSendAlerts({ projectId: crawl.projectId, crawlId, projectName: crawl.project.name,
+      websiteUrl: crawl.project.websiteUrl, rawIssues: issues, score }).catch(() => {});
+  } catch (error) {
+    console.error(JSON.stringify({ event: "audit.failed", crawlId, finalAttempt, type: (error as Error).name }));
+    const failed = await prisma.crawl.updateMany({ where: { id: crawlId, leaseToken }, data: { status: finalAttempt ? "failed" : "queued", finishedAt: finalAttempt ? new Date() : null,
+      activeProjectId: finalAttempt ? null : crawl.projectId, leaseToken: null, leaseExpiresAt: null,
+      error: (error as Error).message.slice(0, 500), progress: JSON.stringify({ phase: finalAttempt ? "failed" : "queued", message: finalAttempt ? (error as Error).message : "Retrying audit after a temporary failure…" }) } });
+    if (finalAttempt && failed.count) {
+      await settleUsage(crawl.reservationId, false);
+      await checkAndSendAlerts({
+        projectId: crawl.projectId, crawlId, projectName: crawl.project.name,
+        websiteUrl: crawl.project.websiteUrl, rawIssues: [],
+        score: { overall: null, categories: [], counts: { critical: 0, high: 0, medium: 0, low: 0 } },
+        failed: { error: (error as Error).message.slice(0, 300) },
       }).catch(() => {});
     }
-
-    // score + report
-    const score = calculateScore(pages, rawIssues);
-    const topRecs = recs.slice(0, 4).map((r, i) => `${i + 1}. ${r.whatWrong} → ${r.whatToChange}`).join("\n");
-    const markdown = `# SEO Report — ${crawl.project.websiteUrl}\n\nSEO HEALTH: ${score.overall}/100\n\n## Biggest problems\n${rawIssues.slice(0, 5).map((i) => `- [${i.severity}] ${i.title}`).join("\n") || "- none"}\n\n## This week's recommendation\n${topRecs || "Keep monitoring."}\n\n*Crawl errors: ${errors.length}. Pages: ${pages.length}.*`;
-    await prisma.report.create({
-      data: {
-        projectId: crawl.projectId, crawlId,
-        summary: JSON.stringify(score).slice(0, 20000),
-        markdown,
-      },
-    });
-
-    await prisma.crawl.update({
-      where: { id: crawlId },
-      data: { status: "completed", finishedAt: new Date(), pagesFound: pages.length, pagesCrawled: pages.length, progress: JSON.stringify({ phase: "done", message: "Scan complete" }) },
-    });
-
-    // alerts: compare vs previous scan, email prefs (never fails the job)
-    await setProgress(crawlId, "done", "Scan complete — checking alerts…").catch(() => {});
-    await checkAndSendAlerts({
-      projectId: crawl.projectId, crawlId,
-      projectName: (crawl.project as any).name || crawl.project.websiteUrl,
-      websiteUrl: crawl.project.websiteUrl,
-      rawIssues, score,
-    });
-    await prisma.crawl.update({
-      where: { id: crawlId },
-      data: { progress: JSON.stringify({ phase: "done", message: "Scan complete" }) },
-    }).catch(() => {});
-  } catch (e: any) {
-    console.error("[job] crawl failed", crawlId, e);
-    await prisma.crawl.update({
-      where: { id: crawlId },
-      data: { status: "failed", finishedAt: new Date(), error: String(e?.message || e).slice(0, 2000), progress: JSON.stringify({ phase: "failed", message: String(e?.message || "failed") }) },
-    }).catch(() => {});
-    try {
-      const failed = await prisma.crawl.findUnique({ where: { id: crawlId }, include: { project: true } });
-      if (failed) {
-        await checkAndSendAlerts({
-          projectId: failed.projectId, crawlId,
-          projectName: (failed.project as any).name || failed.project.websiteUrl,
-          websiteUrl: failed.project.websiteUrl,
-          rawIssues: [], score: { overall: 0, categories: [], counts: { critical: 0, high: 0, medium: 0, low: 0 } },
-          failed: { error: String(e?.message || e).slice(0, 300) },
-        });
-      }
-    } catch {}
-  }
-}
-
-let redisConnection: IORedis | undefined;
-let crawlQueue: Queue<{ crawlId: string }> | undefined;
-
-function getCrawlQueue() {
-  const url = process.env.REDIS_URL;
-  if (!url) return undefined;
-  redisConnection ??= new IORedis(url, { maxRetriesPerRequest: 1, enableOfflineQueue: false, connectTimeout: 10_000 });
-  crawlQueue ??= new Queue("crawl", { connection: redisConnection });
-  return crawlQueue;
-}
-
-/** Use durable Redis jobs in production and the lightweight local runner in development. */
-export async function enqueueCrawl(crawlId: string) {
-  try {
-    const queue = getCrawlQueue();
-    if (queue) {
-      await queue.add("crawl", { crawlId }, { jobId: crawlId, removeOnComplete: 1000, removeOnFail: 1000 });
-      return;
-    }
-    if (process.env.NODE_ENV === "production") throw new Error("REDIS_URL is required to enqueue crawl jobs in production");
-    setImmediate(() => {
-      runCrawlJob(crawlId).catch((e) => console.error("[job] unhandled", e));
-    });
-  } catch (error) {
-    await prisma.crawl.update({
-      where: { id: crawlId },
-      data: { status: "failed", finishedAt: new Date(), error: String(error).slice(0, 2000), progress: JSON.stringify({ phase: "failed", message: "Could not queue this crawl" }) },
-    }).catch(() => {});
     throw error;
+  } finally { clearInterval(heartbeat); }
+}
+let connection: IORedis | undefined;
+let queue: Queue<{ crawlId: string }> | undefined;
+export function getCrawlQueue() {
+  if (!process.env.REDIS_URL) return undefined;
+  if (!connection) {
+    connection = new IORedis(process.env.REDIS_URL, { maxRetriesPerRequest: 1, enableOfflineQueue: false, connectTimeout: 10000 });
+    connection.on("error", () => {});
   }
+  queue ??= new Queue("crawl", { connection });
+  return queue;
+}
+export async function enqueueCrawl(crawlId: string) {
+  const queue = getCrawlQueue();
+  if (queue) {
+    await queue.add("crawl", { crawlId }, { jobId: crawlId, attempts: 3, backoff: { type: "exponential", delay: 5000 }, removeOnComplete: 1000, removeOnFail: 1000 });
+    return;
+  }
+  if (process.env.NODE_ENV === "production") throw new Error("REDIS_URL is required for production crawls");
+  setImmediate(() => { runCrawlJob(crawlId).catch(() => console.error("[crawl] failed", { crawlId })); });
 }

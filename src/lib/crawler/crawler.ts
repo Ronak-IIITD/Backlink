@@ -1,120 +1,85 @@
-import psl from "psl";
 import { fetchPage } from "./fetcher";
 import { parseHtml } from "./parser";
 import { isAllowedByRobots } from "./robots";
+import { renderPage } from "./renderer";
+import { sameSite } from "./scope";
 import type { CrawlOptions, ParsedPage } from "./types";
 import { normalizeUrl } from "@/lib/url-validation";
 
-function registrable(host: string): string {
-  const p = psl.parse(host);
-  if (typeof p === "object" && "domain" in p && p.domain) return p.domain as string;
-  const parts = host.split(".");
-  return parts.slice(-2).join(".");
+export interface CrawlProgress { phase: string; message: string; found: number; crawled: number }
+export interface CrawlCoverage {
+  attempted: number; audited: number; discovered: number; blocked: number;
+  failed: number; limited: boolean; partial: boolean; mode: "html" | "javascript";
 }
-
-function sameSite(a: string, b: string): boolean {
-  try {
-    const ua = new URL(a);
-    const ub = new URL(b);
-    return registrable(ua.hostname) === registrable(ub.hostname);
-  } catch {
-    return false;
-  }
+function stub(url: string, depth: number, error: string, statusCode = 0): ParsedPage {
+  return { url, finalUrl: url, statusCode, contentType: "", title: null, metaDescription: null,
+    canonical: null, h1: null, h1Count: 0, h2s: [], bodyText: "", wordCount: 0, links: [], images: [],
+    altMissingCount: 0, og: {}, schemaTypes: [], robotsDirectives: { noindex: false, nofollow: false },
+    indexable: false, sizeBytes: 0, loadMs: 0, depth, auditError: error };
 }
-
-function cleanLink(href: string): string | null {
-  try {
-    const u = new URL(href);
-    if (u.protocol !== "http:" && u.protocol !== "https:") return null;
-    u.hash = "";
-    // drop tracking params? keep simple: keep all but hash
-    return u.toString();
-  } catch {
-    return null;
-  }
-}
-
-export interface CrawlProgress {
-  phase: string;
-  message: string;
-  found: number;
-  crawled: number;
-}
-
-export async function crawlSite(
-  startUrl: string,
-  opts: CrawlOptions,
-  onProgress?: (p: CrawlProgress) => void | Promise<void>
-): Promise<{ pages: ParsedPage[]; errors: { url: string; error: string }[] }> {
+export async function crawlSite(startUrl: string, opts: CrawlOptions, onProgress?: (p: CrawlProgress) => void | Promise<void>) {
   const start = normalizeUrl(startUrl);
-  const queue: { url: string; depth: number }[] = [{ url: start, depth: 0 }];
-  const seen = new Set<string>([start.split("#")[0]]);
-  const pages: ParsedPage[] = [];
-  const errors: { url: string; error: string }[] = [];
-
-  const report = async (phase: string, message: string) => {
-    if (onProgress) await onProgress({ phase, message, found: seen.size, crawled: pages.length });
-  };
-
-  await report("crawl", `Starting scan of ${start}…`);
-
-  while (queue.length > 0 && pages.length < opts.maxPages) {
-    const item = queue.shift()!;
-    if (item.depth > opts.maxDepth) continue;
+  const maxPages = Math.min(30, Math.max(1, opts.maxPages));
+  const queue = [{ url: start, depth: 0 }];
+  const seen = new Set<string>([start]);
+  const pages: ParsedPage[] = [], errors: { url: string; error: string }[] = [];
+  const mode = opts.renderMode || "html";
+  const deadline = AbortSignal.timeout(Math.max(1, Math.min(opts.deadlineMs ?? 900000, 900000)));
+  let attempted = 0, blocked = 0;
+  const report = async (message: string) => onProgress?.({ phase: "crawl", message, found: seen.size, crawled: pages.length });
+  await report(`Starting scan of ${start}…`);
+  while (queue.length && attempted < maxPages && !deadline.aborted) {
+    const { url, depth } = queue.shift()!;
+    attempted++;
     try {
-      if (!(await isAllowedByRobots(item.url))) {
-        errors.push({ url: item.url, error: "Blocked by robots.txt" });
+      if (!(await isAllowedByRobots(url, undefined, deadline))) { blocked++; errors.push({ url, error: "Blocked by robots.txt" }); continue; }
+      await report(`Scanning ${url} (${attempted}/${maxPages})…`);
+      const raw = await fetchPage(url, opts.timeoutMs, 0, deadline);
+      raw.depth = depth;
+      if (!sameSite(start, raw.finalUrl)) throw new Error("Redirect left the website's domain");
+      if (raw.finalUrl !== url && !(await isAllowedByRobots(raw.finalUrl, undefined, deadline))) {
+        blocked++; errors.push({ url, error: "Redirect destination blocked by robots.txt" }); continue;
+      }
+      if (!raw.html) {
+        if (raw.statusCode >= 400) pages.push(stub(url, depth, `HTTP ${raw.statusCode}`, raw.statusCode));
         continue;
       }
-      await report("crawl", `Scanning ${item.url} (${pages.length + 1}/${opts.maxPages})…`);
-      const raw = await fetchPage(item.url, opts.timeoutMs);
-      raw.depth = item.depth;
-      // only store HTML pages as full parsed; record non-200 as minimal page
-      if (!raw.html && raw.statusCode !== 200) {
-        pages.push({
-          url: item.url, finalUrl: raw.finalUrl, statusCode: raw.statusCode,
-          contentType: raw.contentType, title: null, metaDescription: null,
-          canonical: null, h1: null, h1Count: 0, h2s: [], bodyText: "",
-          wordCount: 0, links: [], images: [], altMissingCount: 0, og: {},
-          schemaTypes: [], robotsDirectives: { noindex: true, nofollow: false },
-          indexable: false, sizeBytes: raw.sizeBytes, loadMs: raw.loadMs, depth: item.depth,
-        });
-        continue;
-      }
-      if (!raw.html) continue;
-      const parsed = parseHtml(raw);
-      pages.push(parsed);
-
-      // discover internal links
-      if (item.depth < opts.maxDepth) {
-        for (const l of parsed.links) {
-          if (!l.internal) continue;
-          const cleaned = cleanLink(l.href);
-          if (!cleaned) continue;
-          if (!sameSite(start, cleaned)) continue;
-          // dedupe + avoid non-html assets
-          if (/\.(pdf|jpg|jpeg|png|gif|svg|webp|css|js|zip|mp4|xml)(\?|$)/i.test(cleaned)) continue;
-          if (seen.has(cleaned)) continue;
-          seen.add(cleaned);
-          if (seen.size > opts.maxPages * 3) continue; // bound frontier
-          queue.push({ url: cleaned, depth: item.depth + 1 });
+      if (mode === "javascript" && raw.statusCode === 200) {
+        try {
+          if (!opts.organizationId) throw new Error("Rendering requires a workspace");
+          const rendered = await renderPage(raw.finalUrl, opts.organizationId, deadline, opts.crawlId);
+          if (!(await isAllowedByRobots(rendered.finalUrl, undefined, deadline))) throw new Error("Rendered destination blocked by robots.txt");
+          raw.html = rendered.html; raw.finalUrl = rendered.finalUrl; raw.rendered = true;
+        } catch (error) {
+          const message = (error as Error).message;
+          errors.push({ url, error: message }); pages.push(stub(url, depth, message, raw.statusCode)); continue;
         }
       }
-      if (opts.rateLimitMs > 0) await new Promise((r) => setTimeout(r, opts.rateLimitMs));
-    } catch (e: any) {
-      errors.push({ url: item.url, error: e?.message || "fetch error" });
-      // record broken page stub so audit can flag 4xx/5xx + broken links
-      pages.push({
-        url: item.url, finalUrl: item.url, statusCode: 0,
-        contentType: "", title: null, metaDescription: null,
-        canonical: null, h1: null, h1Count: 0, h2s: [], bodyText: "",
-        wordCount: 0, links: [], images: [], altMissingCount: 0, og: {},
-        schemaTypes: [], robotsDirectives: { noindex: true, nofollow: false },
-        indexable: false, sizeBytes: 0, loadMs: 0, depth: item.depth,
-      });
+      const parsed = parseHtml(raw);
+      parsed.rendered = !!raw.rendered;
+      pages.push(parsed);
+      if (depth < opts.maxDepth) {
+        for (const link of parsed.links) {
+          try {
+            const next = new URL(link.href);
+            next.hash = "";
+            if (!["http:", "https:"].includes(next.protocol) || !sameSite(start, next.href)) continue;
+            if (/\.(pdf|jpg|jpeg|png|gif|svg|webp|css|js|zip|mp4|xml)(\?|$)/i.test(next.href)) continue;
+            if (seen.has(next.href) || seen.size >= maxPages * 3) continue;
+            seen.add(next.href); queue.push({ url: next.href, depth: depth + 1 });
+          } catch { /* Ignore malformed discovered links. */ }
+        }
+      }
+    } catch (error) {
+      const message = (error as Error).message || "Request failed";
+      errors.push({ url, error: message }); pages.push(stub(url, depth, message));
     }
+    if (opts.rateLimitMs > 0 && !deadline.aborted) await new Promise((resolve) => setTimeout(resolve, Math.min(opts.rateLimitMs, 1000)));
   }
-
-  await report("crawl", `Found ${pages.length} pages. Analyzing…`);
-  return { pages, errors };
+  const audited = pages.filter((p) => p.statusCode === 200 && !p.auditError && /html/i.test(p.contentType)).length;
+  const coverage: CrawlCoverage = { attempted, audited, discovered: seen.size, blocked,
+    failed: errors.length - blocked, limited: queue.length > 0 || deadline.aborted,
+    partial: errors.length > 0 || queue.length > 0 || deadline.aborted, mode };
+  await report(`Audited ${audited} pages${coverage.partial ? " with incomplete coverage" : ""}. Analyzing…`);
+  return { pages, errors, coverage };
 }

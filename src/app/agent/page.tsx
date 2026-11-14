@@ -108,7 +108,7 @@ export default function AgentPage() {
               <ol className="mt-4 space-y-0">
                 <Step done title="Analyzed crawled pages" sub={`${recs.length} recommendations ranked by impact`} delay={0.05} />
                 <Step done title="Identified what matters" sub={selected.whatWrong} delay={0.18} />
-                <Step done={!!relatedActions.length || selected.canAutomate} title={selected.canAutomate ? "Generated replacement" : "Documented manual fix"} sub={selected.whatToChange} delay={0.31} />
+                <Step done={!!relatedActions.length} title={relatedActions.length ? "Draft available" : "Review the recommended fix"} sub={selected.whatToChange} delay={0.31} />
                 <Step now title={awaiting.length ? `${awaiting.length} change${awaiting.length > 1 ? "s" : ""} waiting for approval` : "Nothing waiting — queue is clear"} sub={selected.needsApproval || "Approvals are recorded with reviewer and timestamp."} delay={0.44} />
               </ol>
               <motion.div

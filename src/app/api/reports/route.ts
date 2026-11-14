@@ -13,16 +13,21 @@ export async function GET() {
       select: { id: true, name: true, websiteUrl: true },
     });
     const projectMap = new Map(projects.map((p) => [p.id, p]));
+    const crawls = await prisma.crawl.findMany({ where: { projectId: { in: projects.map((p) => p.id) }, status: "completed" }, select: { id: true, scoreVersion: true } });
+    const crawlMap = new Map(crawls.map((c) => [c.id, c]));
     const reports = await prisma.report.findMany({
-      where: { projectId: { in: projects.map((p) => p.id) } },
+      where: { projectId: { in: projects.map((p) => p.id) }, crawlId: { in: crawls.map((c) => c.id) } },
       orderBy: { createdAt: "desc" },
       take: 20,
     });
     const data = reports.map((r) => {
+      const legacy = !r.crawlId || (crawlMap.get(r.crawlId)?.scoreVersion || 1) < 2;
+      let coverage = null;
       let score: number | null = null;
       try {
         const s = JSON.parse(r.summary || "{}");
-        if (typeof s.overall === "number") score = s.overall;
+        if (!legacy && typeof s.overall === "number") score = s.overall;
+        coverage = s.coverage || null;
       } catch {}
       const p = projectMap.get(r.projectId);
       return {
@@ -32,7 +37,7 @@ export async function GET() {
         websiteUrl: p?.websiteUrl || "",
         createdAt: r.createdAt,
         crawlId: r.crawlId,
-        score,
+        score, legacy, coverage,
         markdown: (r.markdown || "").slice(0, 2000),
       };
     });

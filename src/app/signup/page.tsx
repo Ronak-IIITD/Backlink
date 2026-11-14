@@ -10,7 +10,8 @@ function SignupForm() {
   const r = useRouter();
   const sp = useSearchParams();
   const preset = sp.get("url") || "";
-  const [form, setForm] = useState({ email: "", password: "", name: "", orgName: "", websiteUrl: preset });
+  const token = sp.get("token") || "";
+  const [form, setForm] = useState({ email: sp.get("email") || "", password: "", name: "", orgName: "", websiteUrl: preset });
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -20,7 +21,7 @@ function SignupForm() {
     try {
       const s = await fetch("/api/auth/signup", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: form.email, password: form.password, name: form.name, orgName: form.orgName }),
+        body: JSON.stringify({ email: form.email, password: form.password, name: form.name, orgName: form.orgName, token }),
       }).then((x) => x.json());
       if (!s.ok) { setErr(s.error); return; }
       // create first project immediately when URL preset (onboarding continuity)
@@ -37,6 +38,7 @@ function SignupForm() {
 
   return (
     <form onSubmit={submit} className="space-y-4" aria-label="Create account">
+      {!token && <Alert tone="warn">The private pilot is invitation-only. Contact the person who invited you for your signup link.</Alert>}
       {err && <Alert tone="error">{err}</Alert>}
       {preset && (
         <div className="rounded-[10px] border border-indigo-200 bg-indigo-50/60 px-3.5 py-2.5 text-sm">
@@ -49,8 +51,8 @@ function SignupForm() {
       <Field label="Work email">
         <Input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="you@company.com" type="email" required autoComplete="email" />
       </Field>
-      <Field label="Password" hint="Minimum 8 characters.">
-        <Input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required autoComplete="new-password" />
+      <Field label="Password" hint="At least 12 characters; maximum 72 UTF-8 bytes.">
+        <Input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required minLength={12} maxLength={72} autoComplete="new-password" />
       </Field>
       <div className="grid grid-cols-2 gap-3">
         <Field label="Your name">
@@ -60,7 +62,7 @@ function SignupForm() {
           <Input value={form.orgName} onChange={(e) => setForm({ ...form, orgName: e.target.value })} placeholder="Acme Co" />
         </Field>
       </div>
-      <Button className="w-full" size="lg" loading={loading}>
+      <Button className="w-full" size="lg" loading={loading} disabled={!token}>
         {form.websiteUrl.trim() ? "Create account & audit site" : "Create account"} <ArrowRight className="h-4 w-4" aria-hidden />
       </Button>
     </form>
@@ -69,7 +71,7 @@ function SignupForm() {
 
 export default function Signup() {
   return (
-    <AuthLayout title="Create your account" sub="One website. A real audit in minutes. Nothing changes without your approval.">
+    <AuthLayout title="Join the private pilot" sub="Your invitation includes one free 30-page audit and five fix drafts. Website updates are manual.">
       <Suspense fallback={<div className="text-sm text-slate-500">Loading…</div>}>
         <SignupForm />
       </Suspense>

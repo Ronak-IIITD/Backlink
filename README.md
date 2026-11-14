@@ -1,8 +1,8 @@
 # SEO Agent
 
-SEO Agent helps a team understand and improve a website’s search health. It crawls a site, identifies concrete issues, explains their impact, and prepares fixes for review. Approved changes are tracked so the team can follow their progress.
+SEO Agent helps a team understand and improve a website’s search health. It crawls a site, identifies concrete issues, explains their impact, and prepares fixes for review. Approved fixes are copied into the customer’s website editor. A later audit can verify whether the original issue is resolved.
 
-This repository contains the application and its operational notes. The product is under active development; the capabilities below describe the current implementation.
+This repository contains the application and its operational notes. The product is being prepared for an invitation-only paid pilot. See [the pilot runbook](docs/PILOT_RUNBOOK.md) for access activation, allowances, deployment and remaining launch gates.
 
 ## Product workflow
 
@@ -42,7 +42,8 @@ cp .env.example .env
 Set `SESSION_SECRET` to a random value of at least 32 characters. Then initialize the local database and start the application:
 
 ```bash
-npx prisma db push
+npm run db:push
+npm run pilot -- invite owner@example.com
 npm run dev
 ```
 
@@ -100,3 +101,7 @@ For local development, the callback is `http://localhost:3000/api/integrations/s
 ## Configuration
 
 See `.env.example` for the full list. `DATABASE_URL` and `SESSION_SECRET` are required. AI, email, and Google OAuth settings are optional. Password recovery requires a Resend API key and a verified sender address.
+
+## Private pilot
+
+One invited owner and one website per workspace. The free audit includes five drafts for 30 days. Paid access is manually activated at $29 USD per calendar month for eight audits and 50 drafts. Weekly audits share that allowance. JavaScript rendering requires ScrapingBee. Publishing integrations and public approval links are disabled. Source checks and PostgreSQL/Redis CI are included; provider credentials, verified email delivery, hosting setup, backup restoration and customer terms remain operator launch gates.

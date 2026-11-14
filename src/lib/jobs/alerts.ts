@@ -1,3 +1,4 @@
+import { requirePaid } from "@/lib/pilot/access";
 import { prisma } from "@/lib/db";
 import { sendAlertEmail } from "@/lib/email";
 import type { RawIssue } from "@/lib/audit/rules";
@@ -35,7 +36,10 @@ export async function checkAndSendAlerts(args: {
 }): Promise<AlertOutcome[]> {
   const outcomes: AlertOutcome[] = [];
   try {
-    const prefs = await prisma.notificationPref.findMany({ where: { projectId: args.projectId, active: true } });
+    const project = await prisma.project.findUniqueOrThrow({ where: { id: args.projectId } });
+    await requirePaid(prisma, project.organizationId);
+    const owners = await prisma.membership.findMany({ where: { organizationId: project.organizationId, role: "owner" }, include: { user: { select: { email: true } } } });
+    const prefs = await prisma.notificationPref.findMany({ where: { projectId: args.projectId, active: true, email: { in: owners.map((owner) => owner.user.email) } } });
     if (!prefs.length) return outcomes;
 
     if (args.failed) {
@@ -68,6 +72,8 @@ export async function checkAndSendAlerts(args: {
       prisma.sEOIssue.findMany({ where: { crawlId: prev.id, severity: "critical" }, select: { type: true, title: true } }),
       prisma.report.findFirst({ where: { crawlId: prev.id }, orderBy: { createdAt: "desc" } }),
     ]);
+    try { if (JSON.parse(prevReport?.summary || "{}").coverage?.partial) return outcomes; } catch { return outcomes; }
+    if (args.score.overall === null) return outcomes;
     const prevTypes = new Set(prevIssues.map((i) => i.type));
     const newCritical = args.rawIssues.filter((i) => i.severity === "critical" && !prevTypes.has(i.type));
     let prevScore: number | null = null;
@@ -77,7 +83,11 @@ export async function checkAndSendAlerts(args: {
       const events = parseEvents(p);
       const triggered: string[] = [];
       if (events.includes("critical") && newCritical.length) triggered.push("critical");
-      const drop = prevScore != null ? prevScore - args.score.overall : 0;
+      const previousCoverage = JSON.parse(prevReport?.summary || "{}").coverage;
+      const current = await prisma.crawl.findUnique({ where: { id: args.crawlId }, select: { coverage: true } });
+      const currentCoverage = JSON.parse(current?.coverage || "{}");
+      const comparable = prev.scoreVersion >= 2 && previousCoverage?.audited === currentCoverage.audited;
+      const drop = comparable && prevScore != null ? prevScore - args.score.overall : 0;
       if (events.includes("score_drop") && prevScore != null && drop >= (p.scoreDropThreshold || 10)) triggered.push("score_drop");
       if (!triggered.length) continue;
 

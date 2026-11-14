@@ -5,6 +5,7 @@ import type { ParsedPage, RawPage } from "./types";
 export function parseHtml(raw: RawPage): ParsedPage {
   const $ = cheerio.load(raw.html);
   // remove scripts/styles/nav/footer noise for body text? keep main readable text
+  const structuredData = $('script[type="application/ld+json"]').map((_, el) => $(el).text()).get();
   $("script, style, noscript, svg").remove();
   const title = $("title").first().text().trim() || null;
   const metaDescription =
@@ -27,13 +28,14 @@ export function parseHtml(raw: RawPage): ParsedPage {
     $('meta[name="googlebot"]').attr("content") ||
     ""
   ).toLowerCase();
-  const noindex = robotsMeta.includes("noindex");
-  const nofollow = robotsMeta.includes("nofollow");
+  const noindex = /\b(noindex|none)\b/.test(robotsMeta) || /noindex|none/i.test(raw.xRobotsTag || "");
+  const nofollow = /\b(nofollow|none)\b/.test(robotsMeta) || /nofollow|none/i.test(raw.xRobotsTag || "");
   const xRobots = ""; // captured at fetch layer if needed
   void xRobots;
 
-  const bodyText = $("body").text().replace(/\s+/g, " ").trim().slice(0, 20000);
-  const wordCount = bodyText ? bodyText.split(/\s+/).filter(Boolean).length : 0;
+  const fullText = $("body").text().replace(/\s+/g, " ").trim();
+  const wordCount = fullText ? fullText.split(/\s+/).filter(Boolean).length : 0;
+  const bodyText = fullText.slice(0, 20000);
 
   const links: ParsedPage["links"] = [];
   const baseHost = (() => {
@@ -83,9 +85,8 @@ export function parseHtml(raw: RawPage): ParsedPage {
   });
 
   const schemaTypes: string[] = [];
-  $('script[type="application/ld+json"]').each((_, el) => {
+  structuredData.forEach((txt) => {
     try {
-      const txt = $(el).text();
       const json = JSON.parse(txt);
       const arr = Array.isArray(json) ? json : [json];
       for (const item of arr) {

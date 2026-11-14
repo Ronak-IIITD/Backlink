@@ -35,14 +35,17 @@ export function Button({
 
 /* ————— Inputs ————— */
 export function Field({ label, hint, error, children }: { label: string; hint?: string; error?: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <label className="label">{label}</label>
-      {children}
-      {error ? <div className="mt-1.5 text-[13px] text-red-600" role="alert">{error}</div>
-        : hint ? <div className="help">{hint}</div> : null}
-    </div>
-  );
+  const generated = React.useId();
+  const control = React.isValidElement<{ id?: string; "aria-describedby"?: string; "aria-invalid"?: boolean }>(children) ? children : null;
+  const id = control?.props.id || generated;
+  const descriptionId = `${id}-description`;
+  const describedBy = [control?.props["aria-describedby"], error || hint ? descriptionId : undefined].filter(Boolean).join(" ") || undefined;
+  return <div>
+    <label className="label" htmlFor={control ? id : undefined}>{label}</label>
+    {control ? React.cloneElement(control, { id, "aria-describedby": describedBy, ...(error ? { "aria-invalid": true } : {}) }) : children}
+    {error ? <div id={descriptionId} className="mt-1.5 text-[13px] text-red-600" role="alert">{error}</div>
+      : hint ? <div id={descriptionId} className="help">{hint}</div> : null}
+  </div>;
 }
 export const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement>>(
   ({ className, ...p }, ref) => <input ref={ref} className={clsx("input", className)} {...p} />
@@ -65,6 +68,8 @@ const sevStyles: Record<string, string> = {
   now: "bg-red-50 text-red-700 border-red-200",
   next: "bg-indigo-50 text-indigo-700 border-indigo-200",
   watch: "bg-slate-100 text-slate-600 border-slate-200",
+  reported_updated: "bg-indigo-50 text-indigo-700 border-indigo-200",
+  verified: "bg-emerald-50 text-emerald-700 border-emerald-200",
   approved: "bg-emerald-50 text-emerald-700 border-emerald-200",
   awaiting_approval: "bg-amber-50 text-amber-800 border-amber-200",
   rejected: "bg-slate-100 text-slate-500 border-slate-200",
@@ -90,12 +95,12 @@ export function AIChip({ children }: { children?: React.ReactNode }) {
 export function Tabs({ tabs, value, onChange }: { tabs: { id: string; label: string; count?: number }[]; value: string; onChange: (id: string) => void }) {
   const reduce = useReducedMotionFlag();
   return (
-    <div className="flex gap-1 border-b border-slate-200" role="tablist" aria-label="Sections">
+    <div className="flex w-full max-w-full gap-1 overflow-x-auto border-b border-slate-200" role="tablist" aria-label="Sections">
       {tabs.map((t) => (
         <button
           key={t.id} role="tab" aria-selected={value === t.id} onClick={() => onChange(t.id)}
           className={clsx(
-            "relative px-3 py-2 text-sm transition-colors duration-150",
+            "relative shrink-0 whitespace-nowrap px-3 py-2 text-sm transition-colors duration-150",
             value === t.id ? "font-semibold text-slate-900" : "text-slate-500 hover:text-slate-900"
           )}
         >

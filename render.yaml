@@ -4,13 +4,13 @@ services:
     runtime: node
     plan: 0.5c-512mb
     buildCommand: npm ci --include=dev && npm run build
-    preDeployCommand: npm run db:migrate:deploy && npm prune --omit=dev
+    preDeployCommand: npm run db:migrate:deploy
     startCommand: npm start
     healthCheckPath: /api/health
     maxShutdownDelaySeconds: 60
     envVars:
       - key: NODE_VERSION
-        value: 20.20.2
+        value: "24.22.3"
       - key: DATABASE_URL
         fromDatabase:
           name: seo-agent-db
@@ -31,8 +31,24 @@ services:
           envVarKey: RENDER_EXTERNAL_URL
       - key: OPENAI_API_KEY
         sync: false
+      - key: SCRAPINGBEE_API_KEY
+        sync: false
+      - key: RENDER_MONTHLY_CREDIT_CAP
+        value: "50000"
+      - key: SUPPORT_EMAIL
+        sync: false
+      - key: AI_INPUT_USD_PER_MILLION
+        value: "0.15"
+      - key: AI_OUTPUT_USD_PER_MILLION
+        value: "0.60"
       - key: OPENAI_MODEL
         value: gpt-4o-mini
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_SEARCH_CONSOLE_REDIRECT_URI
+        sync: false
       - key: OPENAI_BASE_URL
         value: https://api.openai.com/v1
       - key: AI_MONTHLY_COST_CAP_USD
@@ -55,7 +71,7 @@ services:
     maxShutdownDelaySeconds: 300
     envVars:
       - key: NODE_VERSION
-        value: 20.20.2
+        value: "24.22.3"
       - key: DATABASE_URL
         fromDatabase:
           name: seo-agent-db
@@ -79,6 +95,16 @@ services:
         value: "2"
       - key: OPENAI_API_KEY
         sync: false
+      - key: SCRAPINGBEE_API_KEY
+        sync: false
+      - key: RENDER_MONTHLY_CREDIT_CAP
+        value: "50000"
+      - key: SUPPORT_EMAIL
+        sync: false
+      - key: AI_INPUT_USD_PER_MILLION
+        value: "0.15"
+      - key: AI_OUTPUT_USD_PER_MILLION
+        value: "0.60"
       - key: OPENAI_MODEL
         value: gpt-4o-mini
       - key: OPENAI_BASE_URL
@@ -98,12 +124,12 @@ services:
     name: seo-agent-scheduler
     runtime: node
     plan: 0.5c-512mb
-    schedule: "0 3 * * *"
+    schedule: "*/15 * * * *"
     buildCommand: npm ci --omit=dev --ignore-scripts
     startCommand: node scripts/run-cron.mjs
     envVars:
       - key: NODE_VERSION
-        value: 20.20.2
+        value: "24.22.3"
       - key: APP_URL
         fromService:
           type: web

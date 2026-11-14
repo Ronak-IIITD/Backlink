@@ -1,107 +1,84 @@
-/** Pluggable LLM provider (OpenAI-compatible). Returns null when no key → caller uses deterministic fallback. */
+import { prisma } from "@/lib/db";
+import { reserveProvider, settleProvider } from "@/lib/pilot/providers";
+import { readBoundedBody } from "@/lib/crawler/renderer";
 
-export interface LLMResult {
-  text: string;
-  tokensUsed: number;
-  costUsd: number;
-  model: string;
-}
-
-function estimateCost(model: string, inputChars: number, outputChars: number): number {
-  // rough: $0.15/1M in, $0.60/1M out for mini-class; $2.50/$10 for full. Keep conservative.
-  const isMini = /mini|haiku|flash/i.test(model);
-  const inRate = isMini ? 0.15 / 1_000_000 : 2.5 / 1_000_000;
-  const outRate = isMini ? 0.6 / 1_000_000 : 10 / 1_000_000;
-  return (inputChars / 4) * inRate + (outputChars / 4) * outRate;
-}
-
-export async function callLLM(system: string, user: string, opts?: { json?: boolean; maxTokens?: number; timeoutMs?: number; retries?: number }): Promise<(LLMResult & { retries: number }) | null> {
+export interface LLMResult { text: string; tokensUsed: number; costUsd: number; model: string }
+type Options = { json?: boolean; maxTokens?: number; timeoutMs?: number; retries?: number; projectId?: string };
+export async function callLLM(system: string, user: string, opts: Options = {}): Promise<(LLMResult & { retries: number }) | null> {
   const key = process.env.OPENAI_API_KEY;
-  if (!key) return null;
+  if (!key || !opts.projectId) return null;
+  const project = await prisma.project.findUnique({ where: { id: opts.projectId }, select: { organizationId: true } });
+  if (!project) return null;
   const model = process.env.OPENAI_MODEL || "gpt-4o-mini";
-  const base = (process.env.OPENAI_BASE_URL || "https://api.openai.com/v1").replace(/\/$/, "");
-  const maxAttempts = Math.max(1, Math.min(3, (opts?.retries ?? 1) + 1));
-  let lastErr: any = null;
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+  const mini = model === "gpt-4o-mini";
+  const inputRate = Number(process.env.AI_INPUT_USD_PER_MILLION || (mini ? 0.15 : 0));
+  const outputRate = Number(process.env.AI_OUTPUT_USD_PER_MILLION || (mini ? 0.6 : 0));
+  if (!(inputRate > 0 && outputRate > 0)) return null;
+  const reserveMicros = Math.floor(Number(process.env.AI_PER_RUN_COST_CAP_USD || 0.25) * 1_000_000);
+  const maxTokens = Math.min(opts.maxTokens || 1200, 2000);
+  if (!Number.isSafeInteger(reserveMicros) || reserveMicros < 1 || ((system.length + user.length) * inputRate + maxTokens * outputRate) > reserveMicros) return null;
+  const dailyCap = Number(process.env.AI_DAILY_TOKEN_CAP || 500000);
+  const dailyUsage = await prisma.providerCall.aggregate({ where: { organizationId: project.organizationId, provider: "ai", createdAt: { gte: new Date(Date.now() - 86400000) } }, _sum: { tokens: true } });
+  if ((dailyUsage._sum.tokens || 0) >= dailyCap) return null;
+  for (let attempt = 0; attempt < Math.min(3, (opts.retries ?? 1) + 1); attempt++) {
+    let call;
+    try { call = await reserveProvider("ai", project.organizationId, reserveMicros, system.length + user.length + maxTokens); }
+    catch { return null; } // Fail closed, while keeping deterministic drafts available.
+    let settled = false;
     try {
-      const ctrl = new AbortController();
-      const t = setTimeout(() => ctrl.abort(), opts?.timeoutMs || 45000);
-      const res = await fetch(`${base}/chat/completions`, {
-        method: "POST",
-        signal: ctrl.signal,
+      const base = (process.env.OPENAI_BASE_URL || "https://api.openai.com/v1").replace(/\/$/, "");
+      const response = await fetch(`${base}/chat/completions`, {
+        method: "POST", redirect: "error", signal: AbortSignal.timeout(Math.min(opts.timeoutMs || 45000, 45000)),
         headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model,
-          messages: [
-            { role: "system", content: system },
-            { role: "user", content: user },
-          ],
-          temperature: 0.3,
-          max_tokens: opts?.maxTokens || 1200,
-          ...(opts?.json ? { response_format: { type: "json_object" } } : {}),
-        }),
+        body: JSON.stringify({ model, messages: [{ role: "system", content: system }, { role: "user", content: user }],
+          temperature: 0.3, max_tokens: maxTokens, ...(opts.json ? { response_format: { type: "json_object" } } : {}) }),
       });
-      clearTimeout(t);
-      if (!res.ok) {
-        lastErr = new Error(`provider ${res.status}`);
-        console.error("[ai] provider error", res.status, await res.text().catch(() => ""));
-        if (res.status >= 400 && res.status < 500 && res.status !== 429) return null; // don't retry client errors
+      if (!response.ok) {
+        await response.body?.cancel();
+        // Explicit rejection did not produce a completion. Never log upstream bodies or credentials.
+        await settleProvider(call.id, response.status >= 400 && response.status < 500 ? 0 : undefined, 0, response.headers.get("x-request-id") || undefined);
+        settled = true;
+        if (response.status < 500 && response.status !== 429) return null;
         continue;
       }
-      const json = await res.json();
-      const text: string = json.choices?.[0]?.message?.content || "";
-      if (!text.trim()) { lastErr = new Error("empty completion"); continue; }
-      const usage = json.usage || {};
-      const tokensUsed = usage.total_tokens || Math.round((system.length + user.length + text.length) / 4);
-      return { text, tokensUsed, costUsd: estimateCost(model, system.length + user.length, text.length), model, retries: attempt };
-    } catch (e) {
-      lastErr = e;
-      console.error(`[ai] call failed attempt ${attempt + 1}/${maxAttempts}, using fallback if exhausted`, e);
-      await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+      const result = JSON.parse(await readBoundedBody(response, 500000));
+      const text = String(result.choices?.[0]?.message?.content || "");
+      const input = result.usage?.prompt_tokens ?? (system.length + user.length);
+      const output = result.usage?.completion_tokens ?? text.length;
+      const tokensUsed = result.usage?.total_tokens ?? input + output;
+      const micros = Math.ceil(input * inputRate + output * outputRate);
+      await settleProvider(call.id, micros, tokensUsed, response.headers.get("x-request-id") || undefined);
+      settled = true;
+      if (text.trim()) return { text, tokensUsed, costUsd: micros / 1_000_000, model, retries: attempt };
+    } catch {
+      if (!settled) await settleProvider(call.id).catch(() => {});
     }
   }
-  console.error("[ai] all attempts failed", lastErr);
   return null;
 }
-
-/** Validated call: parses JSON + zod-validates, with one repair retry on invalid shape. */
-export async function callLLMValidated<T>(
-  system: string,
-  user: string,
-  schema: { safeParse: (v: unknown) => { success: boolean; data?: T; error?: unknown } },
-  opts?: { maxTokens?: number }
-): Promise<{ data: T; result: LLMResult & { retries: number } } | null> {
-  const first = await callLLM(system, user, { json: true, maxTokens: opts?.maxTokens || 2000, retries: 1 });
+export async function callLLMValidated<T>(system: string, user: string,
+  schema: { safeParse: (value: unknown) => { success: boolean; data?: T; error?: unknown } },
+  opts?: { maxTokens?: number; projectId?: string }): Promise<{ data: T; result: LLMResult & { retries: number } } | null> {
+  const first = await callLLM(system, user, { ...opts, json: true, maxTokens: opts?.maxTokens || 2000, retries: 1 });
   if (!first) return null;
-  const tryParse = (text: string): T | null => {
+  const parse = (text: string): T | null => {
     try {
       const raw = JSON.parse(text);
-      // allow {recs} | {recommendations} | bare array | bare object wrappers
-      const candidate = (raw as any).recs ?? (raw as any).recommendations ?? (raw as any).data ?? raw;
-      const arr = Array.isArray(candidate) ? candidate : (raw as any).fix ? raw : candidate;
-      const parsed = schema.safeParse(arr);
-      if (parsed.success && (parsed as any).data !== undefined) return (parsed as any).data as T;
-      // also try raw directly if wrapper failed
-      const direct = schema.safeParse(raw);
-      if (direct.success) return (direct as any).data as T;
-      return null;
-    } catch {
-      return null;
-    }
+      // Preserve wrapper schemas such as {recs:[...]} before trying a bare payload.
+      for (const value of [raw, raw.recs ?? raw.recommendations ?? raw.data]) {
+        const result = schema.safeParse(value);
+        if (result.success && result.data !== undefined) return result.data;
+      }
+    } catch { /* Invalid AI output is never returned as a fix. */ }
+    return null;
   };
-  const ok1 = tryParse(first.text);
-  if (ok1) return { data: ok1, result: first };
-  // repair pass: ask model to fix shape
-  const repair = await callLLM(
-    system + " Your last output failed schema validation. Return ONLY valid JSON matching the requested shape. No prose.",
-    `Fix this JSON:\n${first.text.slice(0, 4000)}`,
-    { json: true, maxTokens: opts?.maxTokens || 2000, retries: 0 }
-  );
+  const data = parse(first.text);
+  if (data) return { data, result: first };
+  const repair = await callLLM(system + " Return only valid JSON matching the originally requested shape.",
+    `${user}\nRepair your previous response:\n${first.text.slice(0, 4000)}`,
+    { ...opts, json: true, maxTokens: opts?.maxTokens || 2000, retries: 0 });
   if (!repair) return null;
-  const ok2 = tryParse(repair.text);
-  if (!ok2) return null;
-  return {
-    data: ok2,
-    result: { text: repair.text, tokensUsed: first.tokensUsed + repair.tokensUsed, costUsd: first.costUsd + repair.costUsd, model: repair.model, retries: 1 },
-  };
+  const fixed = parse(repair.text);
+  return fixed ? { data: fixed, result: { ...repair, tokensUsed: first.tokensUsed + repair.tokensUsed,
+    costUsd: first.costUsd + repair.costUsd, retries: first.retries + 1 } } : null;
 }

@@ -1,6 +1,7 @@
+import { requirePaid } from "@/lib/pilot/access";
 import { prisma } from "@/lib/db";
 import { getSessionUser, assertProjectAccess } from "@/lib/auth";
-import { ok, fail, toStatus } from "@/lib/api";
+import { ok, fail, apiError } from "@/lib/api";
 import { z } from "zod";
 
 const Schema = z.object({
@@ -20,7 +21,7 @@ export async function GET(_: Request, props: { params: Promise<{ id: string }> }
     const latest = await prisma.crawl.findFirst({ where: { projectId: params.id }, orderBy: { createdAt: "desc" } });
     return ok({ ...redact(project), latestCrawl: latest ? { id: latest.id, status: latest.status, createdAt: latest.createdAt } : null });
   } catch (e: any) {
-    return fail(e.message || "failed", toStatus(e));
+    return apiError(e);
   }
 }
 
@@ -29,10 +30,11 @@ export async function PATCH(req: Request, props: { params: Promise<{ id: string 
   try {
     const u = await getSessionUser();
     if (!u) return fail("UNAUTHORIZED", 401);
-    await assertProjectAccess(u.id, params.id);
+    const project = await assertProjectAccess(u.id, params.id);
     const body = await req.json().catch(() => ({}));
     const parsed = Schema.safeParse(body);
     if (!parsed.success) return fail("Invalid input: " + parsed.error.issues[0]?.message, 400);
+    if (parsed.data.autoRescan !== "off") await requirePaid(prisma, project.organizationId);
     const updated = await prisma.project.update({
       where: { id: params.id },
       data: { autoRescan: parsed.data.autoRescan === "off" ? null : parsed.data.autoRescan },
@@ -42,6 +44,6 @@ export async function PATCH(req: Request, props: { params: Promise<{ id: string 
     });
     return ok(redact(updated));
   } catch (e: any) {
-    return fail(e.message || "failed", toStatus(e));
+    return apiError(e);
   }
 }

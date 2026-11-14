@@ -1,29 +1,18 @@
 "use client";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useRef, useState } from "react";
+import { useRef } from "react";
 import { motion, useScroll, useTransform, useReducedMotion } from "motion/react";
 import { ArrowRight, Check, Play } from "lucide-react";
-import { Button, Input } from "@/components/ui";
 import { MarketingNav } from "@/components/marketing";
 import { Stagger, StaggerItem, Reveal, CountUp, AnimatedProgress } from "@/components/motion";
 
 export default function Home() {
-  const router = useRouter();
-  const [url, setUrl] = useState("");
-  const [err, setErr] = useState("");
   const previewRef = useRef<HTMLDivElement>(null);
   const reduce = useReducedMotion();
 
   // Gentle depth on the product preview: it rises slower than the page around it.
   const { scrollYProgress } = useScroll({ target: previewRef, offset: ["start end", "end start"] });
   const previewY = useTransform(scrollYProgress, [0, 1], [reduce ? 0 : 14, reduce ? 0 : -14]);
-
-  function analyze(e: React.FormEvent) {
-    e.preventDefault();
-    if (!url.trim()) { setErr("Enter your website to begin."); return; }
-    router.push(`/signup?url=${encodeURIComponent(url.trim())}`);
-  }
 
   return (
     <div className="min-h-screen bg-white text-slate-900">
@@ -48,23 +37,8 @@ export default function Home() {
               </p>
             </StaggerItem>
             <StaggerItem className="mt-7">
-              <form onSubmit={analyze} className="max-w-xl" aria-label="Analyze your website">
-                <div className="flex flex-col gap-2 sm:flex-row">
-                  <Input
-                    value={url}
-                    onChange={(e) => { setUrl(e.target.value); setErr(""); }}
-                    placeholder="https://yourbusiness.com"
-                    inputMode="url"
-                    aria-label="Your website URL"
-                    className="h-12 text-[15px]"
-                  />
-                  <Button type="submit" size="lg" className="h-12 shrink-0 px-6">
-                    Analyze my website <ArrowRight className="h-4 w-4" aria-hidden />
-                  </Button>
-                </div>
-                {err ? <p className="mt-2 text-sm text-red-600" role="alert">{err}</p>
-                  : <p className="mt-2 text-[13px] text-slate-500">Free first audit · 30 pages · No credit card · Nothing changes without approval</p>}
-              </form>
+              <Link href="/pricing" className="btn btn-primary btn-lg">Explore the private pilot <ArrowRight className="h-4 w-4" aria-hidden /></Link>
+              <p className="body mt-3">Invitation-only · One free audit and five fix drafts · $29 USD/month for ongoing access</p>
             </StaggerItem>
           </Stagger>
 
@@ -147,7 +121,7 @@ export default function Home() {
             {[["01 — Connect", "Enter your URL. We validate it and create an isolated project."],
               ["02 — Analyze", "We crawl up to 30 pages, run 19 checks, and score transparently."],
               ["03 — Fix", "Review drafted titles, metas, and structure. Approve, edit, or reject."],
-              ["04 — Grow", "Rescan to watch health rise. Content gaps become outlines."]].map(([t, d]) => (
+              ["04 — Grow", "Rescan to check what changed. Content gaps become outlines."]].map(([t, d]) => (
               <StaggerItem as="li" key={t} className="bg-white p-5">
                 <div className="mono text-indigo-700">{t.split(" — ")[0]}</div>
                 <div className="mt-1 font-semibold">{t.split(" — ")[1]}</div>
@@ -166,7 +140,7 @@ export default function Home() {
                 <h2 className="mt-2 text-[28px] font-semibold tracking-tight">A workspace of actions, not a chat window.</h2>
                 <p className="body mt-3">The agent reasons in public: what it scanned, what it found, what it drafted, and what needs you. No “Hello! How can I help?”</p>
                 <div className="mt-5 flex gap-2">
-                  <Link href="/signup" className="btn btn-primary btn-md">Analyze my website</Link>
+                  <Link href="/pricing" className="btn btn-primary btn-md">Explore the pilot</Link>
                   <a href="#product" className="btn btn-secondary btn-md"><Play className="h-4 w-4" /> See how it works</a>
                 </div>
               </div>
@@ -212,7 +186,7 @@ export default function Home() {
             <Reveal><h2 className="section-title text-[22px]">Trust is the feature</h2></Reveal>
             <Stagger gap={0.08} className="mt-5 grid gap-px overflow-hidden rounded-2xl border border-slate-200 bg-slate-200 md:grid-cols-3">
               {[["Real crawls only", "Every issue links to fetched pages, status codes, and hashes. If we didn't fetch it, we don't claim it."],
-                ["Approval-gated", "The agent cannot change your site silently. Draft → await approval → approved → applied."],
+                ["Approval-gated", "The agent cannot change your site silently. Draft → approve → update manually → verify by rescan."],
                 ["No rank promises", "We show what improved and what needs attention. We never promise #1 or invent traffic."]].map(([t, d]) => (
                 <StaggerItem key={t} className="bg-white p-5">
                   <div className="flex items-center gap-2 font-semibold"><Check className="h-4 w-4 text-emerald-600" aria-hidden />{t}</div>
@@ -229,7 +203,7 @@ export default function Home() {
             <h2 className="mx-auto max-w-xl text-[32px] font-semibold tracking-tight">Fix the SEO problems that matter most.</h2>
             <p className="body mx-auto mt-2 max-w-md">Start with one website. See your health score and first fixes in minutes.</p>
             <div className="mt-6 flex justify-center gap-2">
-              <Link href="/signup" className="btn btn-primary btn-lg">Analyze my website</Link>
+              <Link href="/pricing" className="btn btn-primary btn-lg">Explore the pilot</Link>
               <Link href="/login" className="btn btn-secondary btn-lg">Log in</Link>
             </div>
           </Reveal>

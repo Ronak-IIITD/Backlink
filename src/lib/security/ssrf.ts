@@ -1,81 +1,64 @@
 import dns from "node:dns/promises";
 import net from "node:net";
 
-/** SSRF protection: block private/loopback/link-local/reserved IPs and non-http(s). */
-export function isPrivateIp(ip: string): boolean {
-  if (net.isIP(ip) === 0) return false;
-  // IPv4
+/** Fail closed: only globally routable addresses may be contacted. */
+export function isPrivateIp(address: string): boolean {
+  const ip = address.replace(/^\[|\]$/g, "").toLowerCase();
+  if (ip.includes("%")) return true;
   if (net.isIPv4(ip)) {
-    const p = ip.split(".").map(Number);
-    if (p[0] === 10) return true;
-    if (p[0] === 127) return true;
-    if (p[0] === 169 && p[1] === 254) return true;
-    if (p[0] === 172 && p[1] >= 16 && p[1] <= 31) return true;
-    if (p[0] === 192 && p[1] === 168) return true;
-    if (p[0] === 0) return true;
-    // carrier-grade, test-net, multicast, reserved
-    if (p[0] === 100 && p[1] >= 64 && p[1] <= 127) return true;
-    if (p[0] === 192 && p[1] === 0 && p[2] === 2) return true;
-    if (p[0] === 198 && (p[1] === 18 || p[1] === 19 || p[1] === 51 || p[1] === 51)) return true;
-    if (p[0] === 198 && p[1] === 51 && p[2] === 100) return true;
-    if (p[0] === 203 && p[1] === 0 && p[2] === 113) return true;
-    if (p[0] >= 224) return true;
-    return false;
+    const [a, b, c] = ip.split(".").map(Number);
+    return a === 0 || a === 10 || a === 127 || a >= 224 ||
+      (a === 100 && b >= 64 && b <= 127) || (a === 169 && b === 254) ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && (b === 168 || (b === 0 && [0, 2].includes(c)) || (b === 88 && c === 99))) ||
+      (a === 198 && (b === 18 || b === 19 || (b === 51 && c === 100))) ||
+      (a === 203 && b === 0 && c === 113);
   }
-  // IPv6: block loopback, link-local, unique-local, unspecified, multicast
-  const low = ip.toLowerCase();
-  if (low === "::1" || low === "::") return true;
-  if (low.startsWith("fe80:") || low.startsWith("fec0:") || low.startsWith("fc") || low.startsWith("fd"))
-    return true;
-  if (low.startsWith("ff")) return true;
-  return false;
+  if (!net.isIPv6(ip)) return true;
+  // WHATWG canonicalization converts dotted IPv4-mapped addresses to hex.
+  const canonical = new URL(`http://[${ip}]/`).hostname.slice(1, -1);
+  if (canonical.startsWith("::ffff:")) {
+    const parts = canonical.slice(7).split(":");
+    const high = parseInt(parts[0], 16), low = parseInt(parts[1], 16);
+    return isPrivateIp(`${high >>> 8}.${high & 255}.${low >>> 8}.${low & 255}`);
+  }
+  // Global unicast only; reject transition, documentation and benchmark ranges.
+  const first = parseInt(canonical.split(":")[0], 16);
+  return !Number.isFinite(first) || first < 0x2000 || first > 0x3fff || canonical.startsWith("2002:") ||
+    /^2001:(?:0:|:|db8:|2:|10:|20:)/.test(canonical);
 }
 
-const BLOCKED_HOSTNAMES = new Set(["localhost", "metadata.google.internal"]);
-const BLOCKED_SUFFIXES = [".internal", ".local", ".localhost", ".invalid"];
+export function validatePublicUrl(value: string): URL {
+  let url: URL;
+  try { url = new URL(value); } catch { throw new Error("Invalid URL"); }
+  if (!["http:", "https:"].includes(url.protocol)) throw new Error("Only http(s) URLs are allowed");
+  if (url.username || url.password) throw new Error("URLs with credentials are blocked");
+  if (url.port && !["80", "443"].includes(url.port)) throw new Error("Only ports 80 and 443 are allowed");
+  const host = url.hostname.replace(/^\[|\]$/g, "").toLowerCase().replace(/\.$/, "");
+  if (["localhost", "metadata.google.internal"].includes(host) ||
+      [".internal", ".local", ".localhost", ".invalid", ".test"].some((s) => host.endsWith(s))) {
+    throw new Error("Blocked internal host");
+  }
+  if (net.isIP(host) && isPrivateIp(host)) throw new Error("Blocked private IP range");
+  return url;
+}
 
-export async function assertUrlSafe(urlStr: string): Promise<URL> {
-  let u: URL;
-  try {
-    u = new URL(urlStr);
-  } catch {
-    throw new Error("Invalid URL");
+export async function resolvePublicUrl(value: string) {
+  const url = validatePublicUrl(value);
+  const host = url.hostname.replace(/^\[|\]$/g, "").replace(/\.$/, "");
+  const addresses = net.isIP(host)
+    ? [{ address: host, family: net.isIP(host) }]
+    : await dns.lookup(host, { all: true, verbatim: true });
+  if (!addresses.length || addresses.some((a) => isPrivateIp(a.address))) {
+    throw new Error("Blocked: destination is not exclusively public");
   }
-  if (u.protocol !== "http:" && u.protocol !== "https:") {
-    throw new Error("Only http(s) URLs are allowed");
-  }
-  if (u.username || u.password) throw new Error("URLs with credentials are blocked");
-  const host = u.hostname.toLowerCase();
-  if (BLOCKED_HOSTNAMES.has(host)) throw new Error("Blocked host");
-  if (BLOCKED_SUFFIXES.some((s) => host.endsWith(s))) throw new Error("Blocked internal host");
-  if (net.isIP(host)) {
-    if (isPrivateIp(host)) throw new Error("Blocked private IP range (SSRF protection)");
-    return u;
-  }
-  // DNS resolve + check all A/AAAA records
-  try {
-    const [a, aaaa] = await Promise.all([
-      dns.resolve4(host).catch(() => [] as string[]),
-      dns.resolve6(host).catch(() => [] as string[]),
-    ]);
-    const all = [...a, ...aaaa];
-    // If DNS fails (offline test env), fail closed only for suspicious hosts;
-    // allow public-looking hosts to proceed — fetcher still enforces IP check via lookup hook.
-    // To stay secure: if no records, still allow but fetcher will re-check on connect.
-    for (const ip of all) {
-      if (isPrivateIp(ip)) throw new Error("Blocked: domain resolves to private IP (SSRF protection)");
-    }
-  } catch (e: any) {
-    if (e?.message?.includes("Blocked")) throw e;
-    // DNS failure -> allow to proceed to fetcher which will surface fetch error
-  }
-  const port = u.port ? Number(u.port) : u.protocol === "https:" ? 443 : 80;
-  // block non-standard private ports commonly used for infra
-  if (![80, 443, 8080, 8000, 3000, 5000, 8008, 8888].includes(port)) {
-    // allow but flag: many static sites use 8080 etc. Only block well-known infra ports
-    if ([22, 21, 25, 3306, 5432, 6379, 27017, 11211, 9200, 2375, 2376].includes(port)) {
-      throw new Error("Blocked port");
-    }
-  }
-  return u;
+  return { url, addresses };
+}
+
+export async function assertUrlSafe(value: string): Promise<URL> {
+  const timeout = AbortSignal.timeout(8000);
+  return Promise.race([
+    resolvePublicUrl(value).then((result) => result.url),
+    new Promise<never>((_, reject) => timeout.addEventListener("abort", () => reject(new Error("DNS lookup timed out")), { once: true })),
+  ]);
 }
