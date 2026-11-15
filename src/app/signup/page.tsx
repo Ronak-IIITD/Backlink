@@ -11,59 +11,128 @@ function SignupForm() {
   const sp = useSearchParams();
   const preset = sp.get("url") || "";
   const token = sp.get("token") || "";
-  const [form, setForm] = useState({ email: sp.get("email") || "", password: "", name: "", orgName: "", websiteUrl: preset });
+  const [form, setForm] = useState({
+    email: sp.get("email") || "",
+    password: "",
+    name: "",
+    orgName: "",
+    websiteUrl: preset,
+  });
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    setErr(""); setLoading(true);
+    setErr("");
+    setLoading(true);
     try {
       const s = await fetch("/api/auth/signup", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: form.email, password: form.password, name: form.name, orgName: form.orgName, token }),
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: form.email,
+          password: form.password,
+          name: form.name,
+          orgName: form.orgName,
+          token,
+        }),
       }).then((x) => x.json());
-      if (!s.ok) { setErr(s.error); return; }
+      if (!s.ok) {
+        setErr(s.error);
+        return;
+      }
       // create first project immediately when URL preset (onboarding continuity)
       if (form.websiteUrl.trim()) {
         const p = await fetch("/api/projects", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ websiteUrl: form.websiteUrl.trim(), businessName: form.orgName || undefined }),
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            websiteUrl: form.websiteUrl.trim(),
+            businessName: form.orgName || undefined,
+          }),
         }).then((x) => x.json());
-        if (p.ok) { r.push(`/projects/${p.data.id}`); return; }
+        if (p.ok) {
+          r.push(`/projects/${p.data.id}`);
+          return;
+        }
       }
       r.push("/projects?welcome=1");
-    } finally { setLoading(false); }
+    } catch {
+      setErr("We couldn’t connect. Please try again.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
     <form onSubmit={submit} className="space-y-4" aria-label="Create account">
-      {!token && <Alert tone="warn">The private pilot is invitation-only. Contact the person who invited you for your signup link.</Alert>}
+      {!token && (
+        <Alert tone="warn">
+          The private pilot is invitation-only. Contact the person who invited
+          you for your signup link.
+        </Alert>
+      )}
       {err && <Alert tone="error">{err}</Alert>}
       {preset && (
         <div className="rounded-[10px] border border-indigo-200 bg-indigo-50/60 px-3.5 py-2.5 text-sm">
-          Auditing <b className="font-mono text-[13px]">{preset}</b> right after signup.
+          Auditing <b className="font-mono text-[13px]">{preset}</b> right after
+          signup.
         </div>
       )}
       <Field label="Website" hint="The site you want the agent to work on.">
-        <Input value={form.websiteUrl} onChange={(e) => setForm({ ...form, websiteUrl: e.target.value })} placeholder="https://yourbusiness.com" inputMode="url" />
+        <Input
+          value={form.websiteUrl}
+          onChange={(e) => setForm({ ...form, websiteUrl: e.target.value })}
+          placeholder="https://yourbusiness.com"
+          inputMode="url"
+        />
       </Field>
       <Field label="Work email">
-        <Input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="you@company.com" type="email" required autoComplete="email" />
+        <Input
+          value={form.email}
+          onChange={(e) => setForm({ ...form, email: e.target.value })}
+          placeholder="you@company.com"
+          type="email"
+          required
+          autoComplete="email"
+        />
       </Field>
-      <Field label="Password" hint="At least 12 characters; maximum 72 UTF-8 bytes.">
-        <Input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required minLength={12} maxLength={72} autoComplete="new-password" />
+      <Field
+        label="Password"
+        hint="At least 12 characters; maximum 72 UTF-8 bytes."
+      >
+        <Input
+          type="password"
+          value={form.password}
+          onChange={(e) => setForm({ ...form, password: e.target.value })}
+          required
+          minLength={12}
+          maxLength={72}
+          autoComplete="new-password"
+        />
       </Field>
       <div className="grid grid-cols-2 gap-3">
         <Field label="Your name">
-          <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Asha" autoComplete="name" />
+          <Input
+            value={form.name}
+            onChange={(e) => setForm({ ...form, name: e.target.value })}
+            placeholder="Asha"
+            autoComplete="name"
+          />
         </Field>
         <Field label="Business">
-          <Input value={form.orgName} onChange={(e) => setForm({ ...form, orgName: e.target.value })} placeholder="Acme Co" />
+          <Input
+            value={form.orgName}
+            onChange={(e) => setForm({ ...form, orgName: e.target.value })}
+            placeholder="Acme Co"
+          />
         </Field>
       </div>
       <Button className="w-full" size="lg" loading={loading} disabled={!token}>
-        {form.websiteUrl.trim() ? "Create account & audit site" : "Create account"} <ArrowRight className="h-4 w-4" aria-hidden />
+        {form.websiteUrl.trim()
+          ? "Create account & audit site"
+          : "Create account"}{" "}
+        <ArrowRight className="h-4 w-4" aria-hidden />
       </Button>
     </form>
   );
@@ -71,11 +140,24 @@ function SignupForm() {
 
 export default function Signup() {
   return (
-    <AuthLayout title="Join the private pilot" sub="Your invitation includes one free 30-page audit and five fix drafts. Website updates are manual.">
-      <Suspense fallback={<div className="text-sm text-slate-500">Loading…</div>}>
+    <AuthLayout
+      title="Join the private pilot"
+      sub="Your invitation includes one free 30-page audit and five fix drafts. Website updates are manual."
+    >
+      <Suspense
+        fallback={<div className="text-sm text-slate-500">Loading…</div>}
+      >
         <SignupForm />
       </Suspense>
-      <p className="mt-4 text-center text-sm text-slate-500">Have an account? <Link href="/login" className="font-medium text-slate-900 underline underline-offset-2">Log in</Link></p>
+      <p className="mt-4 text-center text-sm text-slate-500">
+        Have an account?{" "}
+        <Link
+          href="/login"
+          className="font-medium text-slate-900 underline underline-offset-2"
+        >
+          Log in
+        </Link>
+      </p>
     </AuthLayout>
   );
 }

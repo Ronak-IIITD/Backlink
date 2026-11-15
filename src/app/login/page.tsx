@@ -13,30 +13,72 @@ export default function Login() {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    setErr(""); setLoading(true);
+    setErr("");
+    setLoading(true);
     try {
       const j = await fetch("/api/auth/login", {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form),
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
       }).then((x) => x.json());
-      if (!j.ok) { setErr(j.error); return; }
+      if (!j.ok) {
+        setErr(j.error);
+        return;
+      }
       r.push("/dashboard");
-    } finally { setLoading(false); }
+    } catch {
+      setErr("We couldn’t connect. Please try again.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
-    <AuthLayout title="Welcome back" sub="Your approval queue and site health are waiting.">
+    <AuthLayout
+      title="Welcome back"
+      sub="Your approval queue and site health are waiting."
+    >
       <form onSubmit={submit} className="space-y-4" aria-label="Log in">
         {err && <Alert tone="error">{err}</Alert>}
         <Field label="Email">
-          <Input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} type="email" required autoComplete="email" />
+          <Input
+            value={form.email}
+            onChange={(e) => setForm({ ...form, email: e.target.value })}
+            type="email"
+            required
+            autoComplete="email"
+          />
         </Field>
         <Field label="Password">
-          <Input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required autoComplete="current-password" />
+          <Input
+            type="password"
+            value={form.password}
+            onChange={(e) => setForm({ ...form, password: e.target.value })}
+            required
+            autoComplete="current-password"
+          />
         </Field>
-        <p className="-mt-2 text-right text-sm"><Link href="/forgot-password" className="font-medium text-slate-700 underline underline-offset-2">Forgot password?</Link></p>
-        <Button className="w-full" size="lg" loading={loading}>Log in</Button>
+        <p className="-mt-2 text-right text-sm">
+          <Link
+            href="/forgot-password"
+            className="font-medium text-slate-700 underline underline-offset-2"
+          >
+            Forgot password?
+          </Link>
+        </p>
+        <Button className="w-full" size="lg" loading={loading}>
+          Log in
+        </Button>
       </form>
-      <p className="mt-4 text-center text-sm text-slate-500">No account? <Link href="/signup" className="font-medium text-slate-900 underline underline-offset-2">Sign up</Link></p>
+      <p className="mt-4 text-center text-sm text-slate-500">
+        No account?{" "}
+        <Link
+          href="/signup"
+          className="font-medium text-slate-900 underline underline-offset-2"
+        >
+          Sign up
+        </Link>
+      </p>
     </AuthLayout>
   );
 }

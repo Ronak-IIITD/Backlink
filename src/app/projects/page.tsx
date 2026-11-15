@@ -5,8 +5,19 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, ArrowRight, Check, Globe, Building2 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { Alert, Button, Field, Input, LoadingState, Textarea } from "@/components/ui";
-import { Stagger, StaggerItem, useReducedMotionFlag } from "@/components/motion";
+import {
+  Alert,
+  Button,
+  Field,
+  Input,
+  LoadingState,
+  Textarea,
+} from "@/components/ui";
+import {
+  Stagger,
+  StaggerItem,
+  useReducedMotionFlag,
+} from "@/components/motion";
 import { easeOutExpo, duration } from "@/lib/motion";
 
 const STEPS = ["Website", "Context (optional)", "Review"];
@@ -18,14 +29,30 @@ export default function Projects() {
   const [creating, setCreating] = useState(false);
   const [step, setStep] = useState(0);
   const [err, setErr] = useState("");
-  const [form, setForm] = useState({ websiteUrl: "", businessName: "", businessType: "", targetCountry: "", targetCity: "", targetKeywords: "", competitors: "", renderMode: "javascript" });
+  const [form, setForm] = useState({
+    websiteUrl: "",
+    businessName: "",
+    businessType: "",
+    targetCountry: "",
+    targetCity: "",
+    targetKeywords: "",
+    competitors: "",
+    renderMode: "javascript",
+  });
   const reduce = useReducedMotionFlag();
 
   useEffect(() => {
-    fetch("/api/projects").then((r) => r.json()).then((j) => {
-      if (!j.ok) { window.location.href = "/login"; return; }
-      setProjects(j.data); setLoading(false);
-    }).catch(() => setLoading(false));
+    fetch("/api/projects")
+      .then((r) => r.json())
+      .then((j) => {
+        if (!j.ok) {
+          window.location.href = "/login";
+          return;
+        }
+        setProjects(j.data);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
   }, []);
 
   function valid(stepIdx: number) {
@@ -34,7 +61,8 @@ export default function Projects() {
   }
 
   async function create() {
-    setErr(""); setCreating(true);
+    setErr("");
+    setCreating(true);
     try {
       const payload = {
         websiteUrl: form.websiteUrl.trim(),
@@ -43,16 +71,42 @@ export default function Projects() {
         businessType: form.businessType || undefined,
         targetCountry: form.targetCountry || undefined,
         targetCity: form.targetCity || undefined,
-        targetKeywords: form.targetKeywords.split("\n").map((s) => s.trim()).filter(Boolean),
-        competitors: form.competitors.split("\n").map((s) => s.trim()).filter(Boolean),
+        targetKeywords: form.targetKeywords
+          .split("\n")
+          .map((s) => s.trim())
+          .filter(Boolean),
+        competitors: form.competitors
+          .split("\n")
+          .map((s) => s.trim())
+          .filter(Boolean),
       };
-      const j = await fetch("/api/projects", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }).then((r) => r.json());
-      if (!j.ok) { setErr(j.error); return; }
+      const j = await fetch("/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      }).then((r) => r.json());
+      if (!j.ok) {
+        setErr(j.error);
+        return;
+      }
       router.push(`/projects/${j.data.id}`);
-    } finally { setCreating(false); }
+    } catch {
+      setErr("Your website couldn’t be added. Please try again.");
+    } finally {
+      setCreating(false);
+    }
   }
 
-  if (loading) return <Shell><h1 className="page-title">Sites</h1><p className="body mt-1">Loading your sites…</p><div className="mt-5"><LoadingState lines={5} /></div></Shell>;
+  if (loading)
+    return (
+      <Shell>
+        <h1 className="page-title">Sites</h1>
+        <p className="body mt-1">Loading your sites…</p>
+        <div className="mt-5">
+          <LoadingState lines={5} />
+        </div>
+      </Shell>
+    );
 
   const showWizard = step > 0 || form.websiteUrl !== "";
 
@@ -61,10 +115,15 @@ export default function Projects() {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="page-title">Sites</h1>
-          <p className="body mt-1">Each site is an isolated workspace with its own audit history and approval queue.</p>
+          <p className="body mt-1">
+            Your website’s audit history, findings, and approved fixes — all in
+            one place.
+          </p>
         </div>
         {!showWizard && projects.length === 0 && (
-          <Button onClick={() => setStep(1)} variant="primary" size="sm">New site audit</Button>
+          <Button onClick={() => setStep(1)} variant="primary" size="sm">
+            New site audit
+          </Button>
         )}
       </div>
 
@@ -72,13 +131,25 @@ export default function Projects() {
       <Stagger gap={0.06} className="mt-5 space-y-2.5">
         {projects.map((p) => (
           <StaggerItem key={p.id}>
-            <Link href={`/projects/${p.id}`} className="card card-hover flex items-center gap-3.5 p-4">
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-slate-900 text-sm font-semibold text-white">{(p.name || "S")[0].toUpperCase()}</span>
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-[15px] font-semibold">{p.name}</span>
-                <span className="mono block truncate text-slate-500">{p.websiteUrl}</span>
+            <Link
+              href={`/projects/${p.id}`}
+              className="card card-hover flex items-center gap-3.5 p-4"
+            >
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-slate-900 text-sm font-semibold text-white">
+                {(p.name || "S")[0].toUpperCase()}
               </span>
-              <ArrowRight className="h-4 w-4 shrink-0 text-slate-300" aria-hidden />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[15px] font-semibold">
+                  {p.name}
+                </span>
+                <span className="mono block truncate text-slate-500">
+                  {p.websiteUrl}
+                </span>
+              </span>
+              <ArrowRight
+                className="h-4 w-4 shrink-0 text-slate-300"
+                aria-hidden
+              />
             </Link>
           </StaggerItem>
         ))}
@@ -86,7 +157,10 @@ export default function Projects() {
           <StaggerItem>
             <div className="card p-8 text-center">
               <div className="text-[15px] font-semibold">No sites yet</div>
-              <p className="body mx-auto mt-1 max-w-sm">Add your first website to start an audit — free, and nothing changes without approval.</p>
+              <p className="body mx-auto mt-1 max-w-sm">
+                Add your first website to start an audit — free, and nothing
+                changes without approval.
+              </p>
             </div>
           </StaggerItem>
         )}
@@ -104,15 +178,21 @@ export default function Projects() {
             transition={{ duration: duration.base, ease: easeOutExpo }}
           >
             <div className="flex items-center justify-between gap-3">
-              <div className="text-sm font-semibold">{STEPS[step - 1] || "Website"}</div>
-              <div className="text-[13px] tabular-nums text-slate-500">Step {step} of {STEPS.length}</div>
+              <div className="text-sm font-semibold">
+                {STEPS[step - 1] || "Website"}
+              </div>
+              <div className="text-[13px] tabular-nums text-slate-500">
+                Step {step} of {STEPS.length}
+              </div>
             </div>
             <div className="mt-2 flex gap-1.5">
               {STEPS.map((s, i) => (
                 <motion.span
                   key={s}
                   className="h-1 flex-1 rounded-full"
-                  animate={{ backgroundColor: i < step ? "#0f172a" : "#e2e8f0" }}
+                  animate={{
+                    backgroundColor: i < step ? "#234d3c" : "#dddfd3",
+                  }}
                   transition={{ duration: 0.3 }}
                 />
               ))}
@@ -127,52 +207,169 @@ export default function Projects() {
                 transition={{ duration: duration.base, ease: easeOutExpo }}
                 className="mt-5 space-y-4"
               >
-                {step === 1 && (<>
-                  <Field label="Website URL" hint="We validate and SSRF-check every URL before crawling.">
-                    <Input autoFocus value={form.websiteUrl} onChange={(e) => setForm({ ...form, websiteUrl: e.target.value })} placeholder="https://yourbusiness.com" inputMode="url" />
-                  </Field>
-                  <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={form.renderMode === "javascript"} onChange={(e) => setForm({ ...form, renderMode: e.target.checked ? "javascript" : "html" })} />Render JavaScript so the audit includes content loaded by scripts.</label>
-                </>)}
+                {step === 1 && (
+                  <>
+                    <Field
+                      label="Website URL"
+                      hint="Enter a public website you own or manage."
+                    >
+                      <Input
+                        autoFocus
+                        value={form.websiteUrl}
+                        onChange={(e) =>
+                          setForm({ ...form, websiteUrl: e.target.value })
+                        }
+                        placeholder="https://yourbusiness.com"
+                        inputMode="url"
+                      />
+                    </Field>
+                    <label className="flex items-start gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={form.renderMode === "javascript"}
+                        onChange={(e) =>
+                          setForm({
+                            ...form,
+                            renderMode: e.target.checked
+                              ? "javascript"
+                              : "html",
+                          })
+                        }
+                      />
+                      Render JavaScript so the audit includes content loaded by
+                      scripts.
+                    </label>
+                  </>
+                )}
                 {step === 2 && (
                   <div className="space-y-4">
-                    <p className="text-sm text-slate-600">Add context to tailor recommendations, or skip it. Your audit starts as soon as the site is created.</p>
+                    <p className="text-sm text-slate-600">
+                      Add context to tailor recommendations, or skip it. Your
+                      audit starts as soon as the site is created.
+                    </p>
                     <div className="grid gap-4 sm:grid-cols-2">
-                      <Field label="Business name"><Input autoFocus value={form.businessName} onChange={(e) => setForm({ ...form, businessName: e.target.value })} placeholder="Acme Co" /></Field>
-                      <Field label="Business type"><Input value={form.businessType} onChange={(e) => setForm({ ...form, businessType: e.target.value })} placeholder="Plumbing, SaaS, dental…" /></Field>
-                      <Field label="Target country"><Input value={form.targetCountry} onChange={(e) => setForm({ ...form, targetCountry: e.target.value })} placeholder="United States" /></Field>
-                      <Field label="Target city"><Input value={form.targetCity} onChange={(e) => setForm({ ...form, targetCity: e.target.value })} placeholder="Austin, TX" /></Field>
+                      <Field label="Business name">
+                        <Input
+                          autoFocus
+                          value={form.businessName}
+                          onChange={(e) =>
+                            setForm({ ...form, businessName: e.target.value })
+                          }
+                          placeholder="Acme Co"
+                        />
+                      </Field>
+                      <Field label="Business type">
+                        <Input
+                          value={form.businessType}
+                          onChange={(e) =>
+                            setForm({ ...form, businessType: e.target.value })
+                          }
+                          placeholder="Plumbing, SaaS, dental…"
+                        />
+                      </Field>
+                      <Field label="Target country">
+                        <Input
+                          value={form.targetCountry}
+                          onChange={(e) =>
+                            setForm({ ...form, targetCountry: e.target.value })
+                          }
+                          placeholder="United States"
+                        />
+                      </Field>
+                      <Field label="Target city">
+                        <Input
+                          value={form.targetCity}
+                          onChange={(e) =>
+                            setForm({ ...form, targetCity: e.target.value })
+                          }
+                          placeholder="Austin, TX"
+                        />
+                      </Field>
                     </div>
-                    <Field label="Target keywords" hint="One per line; used to prioritize recommendations.">
-                      <Textarea value={form.targetKeywords} onChange={(e) => setForm({ ...form, targetKeywords: e.target.value })} placeholder={"emergency plumber Austin\nwater heater repair"} />
+                    <Field
+                      label="Target keywords"
+                      hint="One per line; used to prioritize recommendations."
+                    >
+                      <Textarea
+                        value={form.targetKeywords}
+                        onChange={(e) =>
+                          setForm({ ...form, targetKeywords: e.target.value })
+                        }
+                        placeholder={
+                          "emergency plumber Austin\nwater heater repair"
+                        }
+                      />
                     </Field>
                   </div>
                 )}
                 {step === 3 && (
                   <div className="space-y-2 text-sm">
-                    <Row icon={<Globe className="h-4 w-4" />} label="Website" value={form.websiteUrl} />
-                    <Row icon={<Building2 className="h-4 w-4" />} label="Business" value={form.businessName || "—"} />
-                    <Row icon={<Globe className="h-4 w-4" />} label="JavaScript" value={form.renderMode === "javascript" ? "Rendered" : "HTML only"} />
+                    <Row
+                      icon={<Globe className="h-4 w-4" />}
+                      label="Website"
+                      value={form.websiteUrl}
+                    />
+                    <Row
+                      icon={<Building2 className="h-4 w-4" />}
+                      label="Business"
+                      value={form.businessName || "—"}
+                    />
+                    <Row
+                      icon={<Globe className="h-4 w-4" />}
+                      label="JavaScript"
+                      value={
+                        form.renderMode === "javascript"
+                          ? "Rendered"
+                          : "HTML only"
+                      }
+                    />
                     <div className="rounded-[10px] border border-indigo-200 bg-indigo-50/60 p-3 text-[13px] text-slate-600">
-                      Your first crawl starts automatically. We scan up to 30 pages, run 19 checks, and show live progress. Nothing on your site is changed.
+                      Your first crawl starts automatically. We scan up to 30
+                      pages, run 19 checks, and show live progress. Nothing on
+                      your site is changed.
                     </div>
                   </div>
                 )}
               </motion.div>
             </AnimatePresence>
 
-            {err && <div className="mt-4"><Alert tone="error">{err}</Alert></div>}
+            {err && (
+              <div className="mt-4">
+                <Alert tone="error">{err}</Alert>
+              </div>
+            )}
 
             <div className="mt-5 flex justify-between">
-              <Button variant="ghost" size="sm" onClick={() => (step > 1 ? setStep(step - 1) : setStep(0))}>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => (step > 1 ? setStep(step - 1) : setStep(0))}
+              >
                 <ArrowLeft className="h-4 w-4" /> {step > 1 ? "Back" : "Cancel"}
               </Button>
               {step < STEPS.length ? (
                 <div className="flex items-center gap-2">
-                  {step === 2 && <Button variant="ghost" size="sm" onClick={() => setStep(3)}>Skip for now</Button>}
-                  <Button size="sm" disabled={!valid(step - 1)} onClick={() => setStep(step + 1)}>Continue <ArrowRight className="h-4 w-4" /></Button>
+                  {step === 2 && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setStep(3)}
+                    >
+                      Skip for now
+                    </Button>
+                  )}
+                  <Button
+                    size="sm"
+                    disabled={!valid(step - 1)}
+                    onClick={() => setStep(step + 1)}
+                  >
+                    Continue <ArrowRight className="h-4 w-4" />
+                  </Button>
                 </div>
               ) : (
-                <Button size="sm" loading={creating} onClick={create}><Check className="h-4 w-4" /> Create & start audit</Button>
+                <Button size="sm" loading={creating} onClick={create}>
+                  <Check className="h-4 w-4" /> Create & start audit
+                </Button>
               )}
             </div>
           </motion.div>
@@ -182,10 +379,21 @@ export default function Projects() {
   );
 }
 
-function Row({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
+function Row({
+  icon,
+  label,
+  value,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+}) {
   return (
     <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 px-3 py-2">
-      <span className="flex items-center gap-2 text-slate-500">{icon}{label}</span>
+      <span className="flex items-center gap-2 text-slate-500">
+        {icon}
+        {label}
+      </span>
       <span className="min-w-0 truncate font-medium">{value}</span>
     </div>
   );

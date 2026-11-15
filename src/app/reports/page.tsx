@@ -1,48 +1,236 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { ArrowUpRight, FileText, Mail, Printer } from "lucide-react";
 import { Shell } from "@/components/shell";
-import { Button, LoadingState, EmptyState, toast } from "@/components/ui";
+import {
+  Badge,
+  Button,
+  LoadingState,
+  EmptyState,
+  ErrorState,
+  toast,
+} from "@/components/ui";
 export default function Reports() {
   const [reports, setReports] = useState<any[]>([]);
   const [projects, setProjects] = useState<any[]>([]);
   const [account, setAccount] = useState<any>(null);
   const [schedules, setSchedules] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  async function loadSchedules(id: string) {
-    const result = await fetch(`/api/projects/${id}/schedules`).then((r) => r.json());
-    if (result.ok) setSchedules(result.data.schedules);
+  const [error, setError] = useState(false);
+  const [busy, setBusy] = useState(false);
+  async function read(url: string) {
+    const response = await fetch(url);
+    const result = await response.json();
+    if (response.status === 401) window.location.assign("/login");
+    if (!result.ok) throw new Error(result.error || "Couldn’t load reports");
+    return result.data;
   }
-  useEffect(() => {
-    Promise.all([fetch("/api/reports").then((r) => r.json()), fetch("/api/projects").then((r) => r.json()), fetch("/api/account").then((r) => r.json())])
-      .then(async ([r, p, a]) => { if (r.ok) setReports(r.data); if (a.ok) setAccount(a.data); if (p.ok) { setProjects(p.data); if (p.data[0]) await loadSchedules(p.data[0].id); } })
-      .catch(() => toast("Could not load reports", "Please refresh to try again.")).finally(() => setLoading(false));
+  const load = useCallback(async () => {
+    setError(false);
+    try {
+      const [r, p, a] = await Promise.all([
+        read("/api/reports"),
+        read("/api/projects"),
+        read("/api/account"),
+      ]);
+      const schedule = p[0]
+        ? await read(`/api/projects/${p[0].id}/schedules`)
+        : { schedules: [] };
+      setReports(r);
+      setProjects(p);
+      setAccount(a);
+      setSchedules(schedule.schedules);
+    } catch {
+      setError(true);
+    } finally {
+      setLoading(false);
+    }
   }, []);
-  async function addSchedule() {
-    const me = await fetch("/api/auth/me").then((r) => r.json());
-    const project = projects[0]; if (!project || !me.data?.user) return;
-    const result = await fetch(`/api/projects/${project.id}/schedules`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: me.data.user.email, frequency: "weekly" }) }).then((r) => r.json());
-    if (result.ok) { await loadSchedules(project.id); toast("Weekly report enabled", "Only newly completed audits will be emailed."); }
-    else toast("Could not enable reports", result.error);
+  useEffect(() => {
+    void load();
+  }, [load]);
+  async function updateSchedule(id?: string) {
+    if (!projects[0] || busy) return;
+    setBusy(true);
+    try {
+      const email = id ? null : (await read("/api/auth/me")).user.email;
+      const result = await fetch(
+        `/api/projects/${projects[0].id}/schedules${id ? `?id=${encodeURIComponent(id)}` : ""}`,
+        {
+          method: id ? "DELETE" : "POST",
+          ...(!id
+            ? {
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ email, frequency: "weekly" }),
+              }
+            : {}),
+        },
+      ).then((r) => r.json());
+      if (!result.ok) throw new Error(result.error);
+      const refreshed = await read(`/api/projects/${projects[0].id}/schedules`);
+      setSchedules(refreshed.schedules);
+      toast(
+        id ? "Weekly reports stopped" : "Weekly reports enabled",
+        id ? undefined : "Only newly completed audits will be emailed.",
+      );
+    } catch (e) {
+      toast(
+        "Couldn’t update email reports",
+        e instanceof Error ? e.message : "Please try again.",
+      );
+    } finally {
+      setBusy(false);
+    }
   }
-  async function removeSchedule(id: string) {
-    const project = projects[0]; if (!project) return;
-    const result = await fetch(`/api/projects/${project.id}/schedules?id=${id}`, { method: "DELETE" }).then((r) => r.json());
-    if (result.ok) await loadSchedules(project.id); else toast("Could not remove schedule", result.error);
-  }
-  return <Shell><h1 className="page-title">Reports</h1><p className="body mt-1">Audit snapshots, checked pages, and practical next steps.</p>
-    {loading ? <LoadingState lines={5} /> : <>
-      <section className="card mt-5 p-5"><h2 className="section-title">Weekly email reports</h2><p className="body mt-1">Paid pilot accounts can receive fresh audit reports at their verified account email. Enable weekly audits in your website’s Monitoring tab.</p>
-        {schedules.map((schedule) => <div key={schedule.id} className="mt-3 flex items-center gap-3 text-sm"><span>{schedule.email} · {schedule.frequency}</span><Button size="sm" variant="ghost" onClick={() => removeSchedule(schedule.id)}>Stop reports</Button></div>)}
-        {!schedules.length && <Button className="mt-3" size="sm" disabled={account?.status !== "active" || !projects.length} onClick={addSchedule}>Enable weekly email</Button>}
-      </section>
-      {!!reports.length && <Button className="mt-4 print:hidden" size="sm" variant="secondary" onClick={() => window.print()}>Print / save PDF</Button>}
-      {reports.map((report) => <article key={report.id} className="card mt-4 p-6"><h2 className="section-title">{report.projectName}</h2><p className="body mt-1">{new Date(report.createdAt).toLocaleDateString()} · {report.websiteUrl}</p>
-        <p className="mt-3 text-xl font-semibold">{report.legacy ? "Legacy audit — rescan to update" : report.score !== null ? `Health: ${report.score}/100` : "Health score unavailable"}</p>
-        {report.coverage && <p className="body mt-2">{report.coverage.audited} pages audited of {report.coverage.attempted} attempted URLs{report.coverage.partial ? " · incomplete coverage" : ""}.</p>}
-        <pre className="mt-4 whitespace-pre-wrap font-sans text-sm text-slate-700">{report.markdown}</pre><Link className="mt-3 inline-block text-sm underline" href={`/projects/${report.projectId}`}>Open source audit</Link>
-      </article>)}
-      {!reports.length && <div className="mt-5"><EmptyState title="No completed reports yet" body="Your first report appears after a successful audit." /></div>}
-    </>}
-  </Shell>;
+  return (
+    <Shell>
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="eyebrow mb-2 text-indigo-700">The bigger picture</p>
+          <h1 className="page-title">Your progress, on paper.</h1>
+          <p className="body mt-2">
+            Audit snapshots, checked pages, and a practical path forward.
+          </p>
+        </div>
+        {!!reports.length && !error && (
+          <Button
+            className="print-hidden"
+            size="sm"
+            variant="secondary"
+            onClick={() => window.print()}
+          >
+            <Printer className="h-4 w-4" /> Print / save PDF
+          </Button>
+        )}
+      </div>
+      <div className="mt-8">
+        {loading ? (
+          <LoadingState lines={5} />
+        ) : error ? (
+          <ErrorState
+            title="Reports couldn’t be loaded"
+            body="Please retry to view your latest reports and email schedule."
+            onRetry={load}
+          />
+        ) : (
+          <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_280px]">
+            <div className="min-w-0 space-y-5">
+              {reports.map((report) => (
+                <article key={report.id} className="card overflow-hidden">
+                  <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-200 bg-slate-50/70 p-6">
+                    <div className="min-w-0">
+                      <p className="eyebrow">
+                        {new Date(report.createdAt).toLocaleDateString(
+                          undefined,
+                          { month: "short", day: "numeric", year: "numeric" },
+                        )}
+                      </p>
+                      <h2 className="section-title mt-2">
+                        {report.projectName}
+                      </h2>
+                      <p className="mt-1 break-all text-xs text-slate-500">
+                        {report.websiteUrl}
+                      </p>
+                    </div>
+                    <span className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium">
+                      {report.legacy
+                        ? "Rescan to update"
+                        : typeof report.score === "number"
+                          ? `${report.score} / 100`
+                          : "Score unavailable"}
+                    </span>
+                  </div>
+                  <div className="p-6">
+                    {report.coverage && (
+                      <p className="mb-5 text-xs leading-5 text-slate-500">
+                        {report.coverage.audited} pages audited of{" "}
+                        {report.coverage.attempted} attempted URLs
+                        {report.coverage.partial
+                          ? " · Incomplete coverage"
+                          : ""}
+                        .
+                      </p>
+                    )}
+                    <pre className="whitespace-pre-wrap break-words font-sans text-[13px] leading-7 text-slate-700 [overflow-wrap:anywhere]">
+                      {report.markdown}
+                    </pre>
+                    <Link
+                      className="mt-6 inline-flex items-center gap-2 text-xs font-medium text-indigo-700"
+                      href={`/projects/${report.projectId}`}
+                    >
+                      Open source audit <ArrowUpRight className="h-3.5 w-3.5" />
+                    </Link>
+                  </div>
+                </article>
+              ))}
+              {!reports.length && (
+                <EmptyState
+                  icon={<FileText className="h-5 w-5" />}
+                  title="Your first report starts with an audit"
+                  body="Once an audit finishes, you’ll find its checked pages, findings, and recommendations here."
+                  action={
+                    <Link href="/projects" className="btn btn-primary btn-md">
+                      View your website
+                    </Link>
+                  }
+                />
+              )}
+            </div>
+            <aside className="print-hidden rounded-2xl border border-slate-200 bg-slate-100/60 p-6">
+              <Mail className="h-6 w-6 text-indigo-700" strokeWidth={1.5} />
+              <h2 className="section-title mt-5">A weekly perspective.</h2>
+              <p className="body mt-3 text-[13px]">
+                Receive fresh reports at your verified account email. Enable
+                weekly audits in your website’s Monitoring tab.
+              </p>
+              <div className="mt-4">
+                <Badge
+                  tone={account?.status === "active" ? "completed" : "watch"}
+                >
+                  {account?.status === "active"
+                    ? "Included in your plan"
+                    : "Requires paid pilot access"}
+                </Badge>
+              </div>
+              {schedules.map((s) => (
+                <div key={s.id} className="mt-5 border-t border-slate-200 pt-4">
+                  <p className="break-all text-xs font-medium">{s.email}</p>
+                  <p className="mt-1 text-xs capitalize text-slate-500">
+                    {s.frequency}
+                  </p>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="mt-3"
+                    disabled={busy}
+                    onClick={() => updateSchedule(s.id)}
+                  >
+                    Stop reports
+                  </Button>
+                </div>
+              ))}
+              {!schedules.length && (
+                <Button
+                  className="mt-5 w-full"
+                  size="sm"
+                  disabled={
+                    account?.status !== "active" || !projects.length || busy
+                  }
+                  loading={busy}
+                  onClick={() => updateSchedule()}
+                >
+                  Enable weekly email
+                </Button>
+              )}
+              <p className="mt-5 text-[11px] leading-5 text-slate-500">
+                Weekly audits count toward your plan’s audit allowance. Only
+                new, completed audits are emailed.
+              </p>
+            </aside>
+          </div>
+        )}
+      </div>
+    </Shell>
+  );
 }
