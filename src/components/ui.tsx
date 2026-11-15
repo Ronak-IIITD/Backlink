@@ -3,15 +3,33 @@ import React, { useEffect, useRef, useState } from "react";
 import { clsx } from "clsx";
 import { AnimatePresence, motion } from "motion/react";
 import { AlertCircle, CheckCircle2, Info, Loader2, X } from "lucide-react";
-import { overlayFade, panelRise, drawerSlide, easeOutExpo, duration } from "@/lib/motion";
-import { AnimatedNumber, AnimatedProgress, useReducedMotionFlag } from "@/components/motion";
+import {
+  overlayFade,
+  panelRise,
+  drawerSlide,
+  easeOutExpo,
+  duration,
+} from "@/lib/motion";
+import {
+  AnimatedNumber,
+  AnimatedProgress,
+  useReducedMotionFlag,
+} from "@/components/motion";
 
 /* ————— Button ————— */
 type BtnVariant = "primary" | "accent" | "secondary" | "ghost" | "danger";
 type BtnSize = "sm" | "md" | "lg";
 export function Button({
-  variant = "primary", size = "md", className, loading, ...props
-}: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: BtnVariant; size?: BtnSize; loading?: boolean }) {
+  variant = "primary",
+  size = "md",
+  className,
+  loading,
+  ...props
+}: React.ButtonHTMLAttributes<HTMLButtonElement> & {
+  variant?: BtnVariant;
+  size?: BtnSize;
+  loading?: boolean;
+}) {
   return (
     <button
       className={clsx(
@@ -22,7 +40,7 @@ export function Button({
         variant === "secondary" && "btn-secondary",
         variant === "ghost" && "btn-ghost",
         variant === "danger" && "btn-danger",
-        className
+        className,
       )}
       disabled={loading || props.disabled}
       {...props}
@@ -34,28 +52,84 @@ export function Button({
 }
 
 /* ————— Inputs ————— */
-export function Field({ label, hint, error, children }: { label: string; hint?: string; error?: string; children: React.ReactNode }) {
+export function Field({
+  label,
+  hint,
+  error,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  error?: string;
+  children: React.ReactNode;
+}) {
   const generated = React.useId();
-  const control = React.isValidElement<{ id?: string; "aria-describedby"?: string; "aria-invalid"?: boolean }>(children) ? children : null;
+  const control = React.isValidElement<{
+    id?: string;
+    "aria-describedby"?: string;
+    "aria-invalid"?: boolean;
+  }>(children)
+    ? children
+    : null;
   const id = control?.props.id || generated;
   const descriptionId = `${id}-description`;
-  const describedBy = [control?.props["aria-describedby"], error || hint ? descriptionId : undefined].filter(Boolean).join(" ") || undefined;
-  return <div>
-    <label className="label" htmlFor={control ? id : undefined}>{label}</label>
-    {control ? React.cloneElement(control, { id, "aria-describedby": describedBy, ...(error ? { "aria-invalid": true } : {}) }) : children}
-    {error ? <div id={descriptionId} className="mt-1.5 text-[13px] text-red-600" role="alert">{error}</div>
-      : hint ? <div id={descriptionId} className="help">{hint}</div> : null}
-  </div>;
+  const describedBy =
+    [
+      control?.props["aria-describedby"],
+      error || hint ? descriptionId : undefined,
+    ]
+      .filter(Boolean)
+      .join(" ") || undefined;
+  return (
+    <div>
+      <label className="label" htmlFor={control ? id : undefined}>
+        {label}
+      </label>
+      {control
+        ? React.cloneElement(control, {
+            id,
+            "aria-describedby": describedBy,
+            ...(error ? { "aria-invalid": true } : {}),
+          })
+        : children}
+      {error ? (
+        <div
+          id={descriptionId}
+          className="mt-1.5 text-[13px] text-red-600"
+          role="alert"
+        >
+          {error}
+        </div>
+      ) : hint ? (
+        <div id={descriptionId} className="help">
+          {hint}
+        </div>
+      ) : null}
+    </div>
+  );
 }
-export const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement>>(
-  ({ className, ...p }, ref) => <input ref={ref} className={clsx("input", className)} {...p} />
-);
+export const Input = React.forwardRef<
+  HTMLInputElement,
+  React.InputHTMLAttributes<HTMLInputElement>
+>(({ className, ...p }, ref) => (
+  <input ref={ref} className={clsx("input", className)} {...p} />
+));
 Input.displayName = "Input";
-export const Textarea = React.forwardRef<HTMLTextAreaElement, React.TextareaHTMLAttributes<HTMLTextAreaElement>>(
-  ({ className, ...p }, ref) => <textarea ref={ref} className={clsx("input min-h-[96px] resize-y", className)} {...p} />
-);
+export const Textarea = React.forwardRef<
+  HTMLTextAreaElement,
+  React.TextareaHTMLAttributes<HTMLTextAreaElement>
+>(({ className, ...p }, ref) => (
+  <textarea
+    ref={ref}
+    className={clsx("input min-h-[96px] resize-y", className)}
+    {...p}
+  />
+));
 Textarea.displayName = "Textarea";
-export function Select({ className, ...p }: React.SelectHTMLAttributes<HTMLSelectElement>) {
+export function Select({
+  className,
+  ...p
+}: React.SelectHTMLAttributes<HTMLSelectElement>) {
   return <select className={clsx("input pr-8", className)} {...p} />;
 }
 
@@ -77,9 +151,23 @@ const sevStyles: Record<string, string> = {
   running: "bg-indigo-50 text-indigo-700 border-indigo-200",
   failed: "bg-red-50 text-red-700 border-red-200",
 };
-export function Badge({ tone = "low", children, className }: { tone?: string; children: React.ReactNode; className?: string }) {
+export function Badge({
+  tone = "low",
+  children,
+  className,
+}: {
+  tone?: string;
+  children: React.ReactNode;
+  className?: string;
+}) {
   return (
-    <span className={clsx("inline-flex items-center gap-1 border px-2 py-0.5 text-xs font-medium rounded-md", sevStyles[tone] || sevStyles.low, className)}>
+    <span
+      className={clsx(
+        "inline-flex items-center gap-1 border px-2 py-0.5 text-xs font-medium rounded-md",
+        sevStyles[tone] || sevStyles.low,
+        className,
+      )}
+    >
       {children}
     </span>
   );
@@ -88,24 +176,50 @@ export function SevBadge({ sev }: { sev: string }) {
   return <Badge tone={sev}>{sev.replace("_", " ")}</Badge>;
 }
 export function AIChip({ children }: { children?: React.ReactNode }) {
-  return <span className="ai-chip"><span className="h-1.5 w-1.5 rounded-full bg-indigo-500" aria-hidden />{children || "Generated by your SEO agent"}</span>;
+  return (
+    <span className="ai-chip">
+      <span className="h-1.5 w-1.5 rounded-full bg-indigo-500" aria-hidden />
+      {children || "Generated by your SEO agent"}
+    </span>
+  );
 }
 
 /* ————— Tabs ————— */
-export function Tabs({ tabs, value, onChange }: { tabs: { id: string; label: string; count?: number }[]; value: string; onChange: (id: string) => void }) {
+export function Tabs({
+  tabs,
+  value,
+  onChange,
+}: {
+  tabs: { id: string; label: string; count?: number }[];
+  value: string;
+  onChange: (id: string) => void;
+}) {
   const reduce = useReducedMotionFlag();
   return (
-    <div className="flex w-full max-w-full gap-1 overflow-x-auto border-b border-slate-200" role="tablist" aria-label="Sections">
+    <div
+      className="flex w-full max-w-full gap-1 overflow-x-auto border-b border-slate-200"
+      role="tablist"
+      aria-label="Sections"
+    >
       {tabs.map((t) => (
         <button
-          key={t.id} role="tab" aria-selected={value === t.id} onClick={() => onChange(t.id)}
+          key={t.id}
+          role="tab"
+          aria-selected={value === t.id}
+          onClick={() => onChange(t.id)}
           className={clsx(
             "relative shrink-0 whitespace-nowrap px-3 py-2 text-sm transition-colors duration-150",
-            value === t.id ? "font-semibold text-slate-900" : "text-slate-500 hover:text-slate-900"
+            value === t.id
+              ? "font-semibold text-slate-900"
+              : "text-slate-500 hover:text-slate-900",
           )}
         >
           {t.label}
-          {typeof t.count === "number" && <span className="ml-1.5 rounded-md bg-slate-100 px-1.5 py-0.5 text-xs text-slate-500">{t.count}</span>}
+          {typeof t.count === "number" && (
+            <span className="ml-1.5 rounded-md bg-slate-100 px-1.5 py-0.5 text-xs text-slate-500">
+              {t.count}
+            </span>
+          )}
           {value === t.id && (
             <motion.span
               layoutId={reduce ? undefined : "tabs-indicator"}
@@ -120,33 +234,83 @@ export function Tabs({ tabs, value, onChange }: { tabs: { id: string; label: str
 }
 
 /* ————— Stat / progress ————— */
-export function Stat({ label, value, sub, tone, animate }: { label: string; value: React.ReactNode; sub?: string; tone?: "red" | "green" | "default"; animate?: boolean }) {
+export function Stat({
+  label,
+  value,
+  sub,
+  tone,
+  animate,
+}: {
+  label: string;
+  value: React.ReactNode;
+  sub?: string;
+  tone?: "red" | "green" | "default";
+  animate?: boolean;
+}) {
   return (
     <div className="card p-4">
       <div className="eyebrow">{label}</div>
-      <div className={clsx("mt-1 text-[28px] font-semibold tracking-tight tabular-nums", tone === "red" && "text-red-600", tone === "green" && "text-emerald-600")}>
-        {animate && typeof value === "number" ? <AnimatedNumber value={value} /> : value}
+      <div
+        className={clsx(
+          "mt-1 text-[28px] font-semibold tracking-tight tabular-nums",
+          tone === "red" && "text-red-600",
+          tone === "green" && "text-emerald-600",
+        )}
+      >
+        {animate && typeof value === "number" ? (
+          <AnimatedNumber value={value} />
+        ) : (
+          value
+        )}
       </div>
       {sub && <div className="mt-0.5 text-[13px] text-slate-500">{sub}</div>}
     </div>
   );
 }
-export function Progress({ value, tone = "default" }: { value: number; tone?: "default" | "accent" | "success" }) {
+export function Progress({
+  value,
+  tone = "default",
+}: {
+  value: number;
+  tone?: "default" | "accent" | "success";
+}) {
   return <AnimatedProgress value={value} tone={tone} />;
 }
 export function ScoreBar({ score }: { score: number }) {
   return (
     <div className="flex items-center gap-3">
-      <span className="text-[28px] font-semibold tabular-nums tracking-tight">{score}</span>
-      <div className="flex-1"><Progress value={score} tone={score >= 80 ? "success" : score >= 60 ? "default" : "default"} /></div>
+      <span className="text-[28px] font-semibold tabular-nums tracking-tight">
+        {score}
+      </span>
+      <div className="flex-1">
+        <Progress
+          value={score}
+          tone={score >= 80 ? "success" : score >= 60 ? "default" : "default"}
+        />
+      </div>
       <span className="text-[13px] text-slate-400">/100</span>
     </div>
   );
 }
 
 /* ————— Alert ————— */
-export function Alert({ tone = "info", title, children }: { tone?: "info" | "success" | "warn" | "error"; title?: string; children: React.ReactNode }) {
-  const Icon = tone === "success" ? CheckCircle2 : tone === "error" ? AlertCircle : tone === "warn" ? AlertCircle : Info;
+export function Alert({
+  tone = "info",
+  title,
+  children,
+}: {
+  tone?: "info" | "success" | "warn" | "error";
+  title?: string;
+  children: React.ReactNode;
+}) {
+  const Icon =
+    tone === "success"
+      ? CheckCircle2
+      : tone === "error"
+        ? AlertCircle
+        : tone === "warn"
+          ? AlertCircle
+          : Info;
   const styles = {
     info: "border-slate-200 bg-slate-50 text-slate-700",
     success: "border-emerald-200 bg-emerald-50 text-emerald-900",
@@ -154,9 +318,15 @@ export function Alert({ tone = "info", title, children }: { tone?: "info" | "suc
     error: "border-red-200 bg-red-50 text-red-800",
   }[tone];
   return (
-    <div className={clsx("flex gap-3 rounded-[10px] border p-3.5 text-sm", styles)} role={tone === "error" ? "alert" : "status"}>
+    <div
+      className={clsx("flex gap-3 rounded-[10px] border p-3.5 text-sm", styles)}
+      role={tone === "error" ? "alert" : "status"}
+    >
       <Icon className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-      <div>{title && <div className="font-semibold">{title}</div>}<div className="leading-6 opacity-90">{children}</div></div>
+      <div>
+        {title && <div className="font-semibold">{title}</div>}
+        <div className="leading-6 opacity-90">{children}</div>
+      </div>
     </div>
   );
 }
@@ -165,121 +335,318 @@ export function Alert({ tone = "info", title, children }: { tone?: "info" | "suc
 export function Skeleton({ className }: { className?: string }) {
   return <div className={clsx("skeleton rounded-lg", className)} aria-hidden />;
 }
-export function LoadingState({ lines = 3, label }: { lines?: number; label?: string }) {
+export function LoadingState({
+  lines = 3,
+  label,
+}: {
+  lines?: number;
+  label?: string;
+}) {
   return (
     <div className="card p-5" aria-busy="true" aria-label={label || "Loading"}>
       <div className="space-y-2.5">
         {Array.from({ length: lines }).map((_, i) => (
-          <Skeleton key={i} className={clsx("h-3.5", i === 0 ? "w-1/3" : i === lines - 1 ? "w-2/3" : "w-full")} />
+          <Skeleton
+            key={i}
+            className={clsx(
+              "h-3.5",
+              i === 0 ? "w-1/3" : i === lines - 1 ? "w-2/3" : "w-full",
+            )}
+          />
         ))}
       </div>
       {label && <div className="mt-3 text-[13px] text-slate-500">{label}</div>}
     </div>
   );
 }
-export function EmptyState({ title, body, action, icon }: { title: string; body: string; action?: React.ReactNode; icon?: React.ReactNode }) {
+export function EmptyState({
+  title,
+  body,
+  action,
+  icon,
+}: {
+  title: string;
+  body: string;
+  action?: React.ReactNode;
+  icon?: React.ReactNode;
+}) {
   return (
     <div className="card flex flex-col items-center px-6 py-12 text-center">
-      {icon && <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-[10px] bg-slate-100 text-slate-500">{icon}</div>}
+      {icon && (
+        <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-[10px] bg-slate-100 text-slate-500">
+          {icon}
+        </div>
+      )}
       <div className="text-[15px] font-semibold">{title}</div>
       <p className="body mt-1 max-w-sm">{body}</p>
       {action && <div className="mt-4">{action}</div>}
     </div>
   );
 }
-export function ErrorState({ title, body, onRetry }: { title: string; body: string; onRetry?: () => void }) {
+export function ErrorState({
+  title,
+  body,
+  onRetry,
+}: {
+  title: string;
+  body: string;
+  onRetry?: () => void;
+}) {
   return (
     <div className="card border-red-200 p-6" role="alert">
-      <div className="flex items-center gap-2 font-semibold text-red-800"><AlertCircle className="h-4 w-4" />{title}</div>
+      <div className="flex items-center gap-2 font-semibold text-red-800">
+        <AlertCircle className="h-4 w-4" />
+        {title}
+      </div>
       <p className="mt-1 text-sm text-slate-600">{body}</p>
-      {onRetry && <Button variant="secondary" size="sm" className="mt-3" onClick={onRetry}>Retry — safe, nothing was changed</Button>}
+      {onRetry && (
+        <Button
+          variant="secondary"
+          size="sm"
+          className="mt-3"
+          onClick={onRetry}
+        >
+          Retry — safe, nothing was changed
+        </Button>
+      )}
     </div>
   );
 }
 
-/* ————— Modal / Drawer / Dropdown ————— */
-export function Modal({ open, onClose, title, children, footer }: { open: boolean; onClose: () => void; title: string; children: React.ReactNode; footer?: React.ReactNode }) {
+// Keep keyboard focus inside an open dialog and restore it to its trigger.
+export function useDialogFocus(
+  ref: React.RefObject<HTMLDivElement>,
+  open: boolean,
+) {
   useEffect(() => {
     if (!open) return;
-    const fn = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    const previous = document.activeElement as HTMLElement | null;
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const focusable = () =>
+      Array.from(
+        ref.current?.querySelectorAll<HTMLElement>(
+          'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex="0"]',
+        ) || [],
+      ).filter((el) => el.getClientRects().length > 0);
+    const frame = requestAnimationFrame(() =>
+      (
+        focusable().find((el) => el.hasAttribute("autofocus")) ||
+        focusable()[0] ||
+        ref.current
+      )?.focus(),
+    );
+    const trap = (event: KeyboardEvent) => {
+      if (event.key !== "Tab") return;
+      const elements = focusable();
+      const first = elements[0],
+        last = elements[elements.length - 1];
+      if (!first) {
+        event.preventDefault();
+        ref.current?.focus();
+        return;
+      }
+      if (
+        event.shiftKey &&
+        (document.activeElement === first ||
+          !ref.current?.contains(document.activeElement))
+      ) {
+        event.preventDefault();
+        last.focus();
+      } else if (
+        !event.shiftKey &&
+        (document.activeElement === last ||
+          !ref.current?.contains(document.activeElement))
+      ) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", trap);
+    return () => {
+      cancelAnimationFrame(frame);
+      document.removeEventListener("keydown", trap);
+      document.body.style.overflow = overflow;
+      previous?.focus();
+    };
+  }, [open, ref]);
+}
+
+/* ————— Modal / Drawer / Dropdown ————— */
+export function Modal({
+  open,
+  onClose,
+  title,
+  children,
+  footer,
+}: {
+  open: boolean;
+  onClose: () => void;
+  title: string;
+  children: React.ReactNode;
+  footer?: React.ReactNode;
+}) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useDialogFocus(dialogRef, open);
+  useEffect(() => {
+    if (!open) return;
+    const fn = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
     window.addEventListener("keydown", fn);
     return () => window.removeEventListener("keydown", fn);
   }, [open, onClose]);
   return (
     <AnimatePresence>
       {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label={title}>
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label={title}
+        >
           <motion.div
             className="absolute inset-0 bg-slate-950/40"
-            variants={overlayFade} initial="hidden" animate="visible" exit="exit"
+            variants={overlayFade}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
             onClick={onClose}
           />
           <motion.div
-            className="relative w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-6 shadow-xl"
-            variants={panelRise} initial="hidden" animate="visible" exit="exit"
+            ref={dialogRef}
+            tabIndex={-1}
+            className="relative max-h-[90dvh] w-full max-w-lg overflow-y-auto rounded-2xl border border-slate-200 bg-white p-6 shadow-xl"
+            variants={panelRise}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
           >
             <div className="mb-4 flex items-start justify-between">
               <h2 className="section-title">{title}</h2>
-              <button onClick={onClose} aria-label="Close" className="rounded-md p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"><X className="h-4 w-4" /></button>
+              <button
+                onClick={onClose}
+                aria-label="Close"
+                className="rounded-md p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
+              >
+                <X className="h-4 w-4" />
+              </button>
             </div>
             {children}
-            {footer && <div className="mt-5 flex justify-end gap-2">{footer}</div>}
+            {footer && (
+              <div className="mt-5 flex justify-end gap-2">{footer}</div>
+            )}
           </motion.div>
         </div>
       )}
     </AnimatePresence>
   );
 }
-export function Drawer({ open, onClose, title, children }: { open: boolean; onClose: () => void; title: string; children: React.ReactNode }) {
+export function Drawer({
+  open,
+  onClose,
+  title,
+  children,
+}: {
+  open: boolean;
+  onClose: () => void;
+  title: string;
+  children: React.ReactNode;
+}) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useDialogFocus(dialogRef, open);
   useEffect(() => {
     if (!open) return;
-    const fn = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    const fn = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
     window.addEventListener("keydown", fn);
-    document.body.style.overflow = "hidden";
-    return () => { window.removeEventListener("keydown", fn); document.body.style.overflow = ""; };
+    return () => {
+      window.removeEventListener("keydown", fn);
+    };
   }, [open, onClose]);
   return (
     <AnimatePresence>
       {open && (
-        <div className="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label={title}>
+        <div
+          className="fixed inset-0 z-50"
+          role="dialog"
+          aria-modal="true"
+          aria-label={title}
+        >
           <motion.div
             className="absolute inset-0 bg-slate-950/40"
-            variants={overlayFade} initial="hidden" animate="visible" exit="exit"
+            variants={overlayFade}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
             onClick={onClose}
           />
           <motion.div
+            ref={dialogRef}
+            tabIndex={-1}
             className="absolute right-0 top-0 flex h-full w-full max-w-xl flex-col border-l border-slate-200 bg-white shadow-xl"
-            variants={drawerSlide} initial="hidden" animate="visible" exit="exit"
+            variants={drawerSlide}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
             style={{ willChange: "transform" }}
           >
             <div className="flex items-start justify-between border-b border-slate-200 px-5 py-4">
               <h2 className="section-title">{title}</h2>
-              <button onClick={onClose} aria-label="Close panel" className="rounded-md p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"><X className="h-4 w-4" /></button>
+              <button
+                onClick={onClose}
+                aria-label="Close panel"
+                className="rounded-md p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
+              >
+                <X className="h-4 w-4" />
+              </button>
             </div>
-            <div className="flex-1 overflow-auto px-5 py-4" data-lenis-prevent>{children}</div>
+            <div className="flex-1 overflow-auto px-5 py-4" data-lenis-prevent>
+              {children}
+            </div>
           </motion.div>
         </div>
       )}
     </AnimatePresence>
   );
 }
-export function Dropdown({ label, children }: { label: React.ReactNode; children: React.ReactNode }) {
+export function Dropdown({
+  label,
+  children,
+}: {
+  label: React.ReactNode;
+  children: React.ReactNode;
+}) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    const fn = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    const fn = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node))
+        setOpen(false);
+    };
     document.addEventListener("mousedown", fn);
     return () => document.removeEventListener("mousedown", fn);
   }, []);
   return (
     <div ref={ref} className="relative">
-      <button onClick={() => setOpen((v) => !v)} aria-expanded={open} aria-haspopup="menu" className="btn btn-secondary btn-sm">{label}</button>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        aria-haspopup="menu"
+        className="btn btn-secondary btn-sm"
+      >
+        {label}
+      </button>
       <AnimatePresence>
         {open && (
           <motion.div
             role="menu"
             className="absolute right-0 z-40 mt-2 w-56 rounded-xl border border-slate-200 bg-white p-1.5 shadow-md"
-            variants={panelRise} initial="hidden" animate="visible" exit="exit"
+            variants={panelRise}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
           >
             {children}
           </motion.div>
@@ -290,7 +657,15 @@ export function Dropdown({ label, children }: { label: React.ReactNode; children
 }
 
 /* ————— Table ————— */
-export function Table({ columns, rows, rowKey }: { columns: { key: string; header: string; className?: string }[]; rows: Record<string, React.ReactNode>[]; rowKey: (r: Record<string, React.ReactNode>, i: number) => string }) {
+export function Table({
+  columns,
+  rows,
+  rowKey,
+}: {
+  columns: { key: string; header: string; className?: string }[];
+  rows: Record<string, React.ReactNode>[];
+  rowKey: (r: Record<string, React.ReactNode>, i: number) => string;
+}) {
   return (
     <div className="card overflow-hidden">
       <div className="overflow-x-auto">
@@ -298,15 +673,32 @@ export function Table({ columns, rows, rowKey }: { columns: { key: string; heade
           <thead>
             <tr className="border-b border-slate-200 bg-slate-50/80">
               {columns.map((c) => (
-                <th key={c.key} scope="col" className={clsx("whitespace-nowrap px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-500", c.className)}>{c.header}</th>
+                <th
+                  key={c.key}
+                  scope="col"
+                  className={clsx(
+                    "whitespace-nowrap px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-500",
+                    c.className,
+                  )}
+                >
+                  {c.header}
+                </th>
               ))}
             </tr>
           </thead>
           <tbody>
             {rows.map((r, i) => (
-              <tr key={rowKey(r, i)} className="border-b border-slate-100 last:border-0 transition hover:bg-slate-50/70">
+              <tr
+                key={rowKey(r, i)}
+                className="border-b border-slate-100 last:border-0 transition hover:bg-slate-50/70"
+              >
                 {columns.map((c) => (
-                  <td key={c.key} className={clsx("px-4 py-3 align-top", c.className)}>{r[c.key]}</td>
+                  <td
+                    key={c.key}
+                    className={clsx("px-4 py-3 align-top", c.className)}
+                  >
+                    {r[c.key]}
+                  </td>
                 ))}
               </tr>
             ))}
@@ -318,25 +710,68 @@ export function Table({ columns, rows, rowKey }: { columns: { key: string; heade
 }
 
 /* ————— Breadcrumb / pagination ————— */
-export function Breadcrumb({ items }: { items: { label: string; href?: string }[] }) {
+export function Breadcrumb({
+  items,
+}: {
+  items: { label: string; href?: string }[];
+}) {
   return (
-    <nav aria-label="Breadcrumb" className="flex items-center gap-1.5 text-[13px] text-slate-500">
+    <nav
+      aria-label="Breadcrumb"
+      className="flex items-center gap-1.5 text-[13px] text-slate-500"
+    >
       {items.map((it, i) => (
         <span key={i} className="flex items-center gap-1.5">
           {i > 0 && <span className="text-slate-300">/</span>}
-          {it.href ? <a href={it.href} className="hover:text-slate-900 hover:underline">{it.label}</a> : <span className="text-slate-900" aria-current="page">{it.label}</span>}
+          {it.href ? (
+            <a href={it.href} className="hover:text-slate-900 hover:underline">
+              {it.label}
+            </a>
+          ) : (
+            <span className="text-slate-900" aria-current="page">
+              {it.label}
+            </span>
+          )}
         </span>
       ))}
     </nav>
   );
 }
-export function Pagination({ page, totalPages, onPage }: { page: number; totalPages: number; onPage: (p: number) => void }) {
+export function Pagination({
+  page,
+  totalPages,
+  onPage,
+}: {
+  page: number;
+  totalPages: number;
+  onPage: (p: number) => void;
+}) {
   if (totalPages <= 1) return null;
   return (
-    <div className="flex items-center gap-1" role="navigation" aria-label="Pagination">
-      <Button variant="ghost" size="sm" disabled={page <= 1} onClick={() => onPage(page - 1)}>Previous</Button>
-      <span className="px-2 text-[13px] tabular-nums text-slate-500">{page} / {totalPages}</span>
-      <Button variant="ghost" size="sm" disabled={page >= totalPages} onClick={() => onPage(page + 1)}>Next</Button>
+    <div
+      className="flex items-center gap-1"
+      role="navigation"
+      aria-label="Pagination"
+    >
+      <Button
+        variant="ghost"
+        size="sm"
+        disabled={page <= 1}
+        onClick={() => onPage(page - 1)}
+      >
+        Previous
+      </Button>
+      <span className="px-2 text-[13px] tabular-nums text-slate-500">
+        {page} / {totalPages}
+      </span>
+      <Button
+        variant="ghost"
+        size="sm"
+        disabled={page >= totalPages}
+        onClick={() => onPage(page + 1)}
+      >
+        Next
+      </Button>
     </div>
   );
 }
@@ -344,17 +779,25 @@ export function Pagination({ page, totalPages, onPage }: { page: number; totalPa
 /* ————— Toast (minimal) ————— */
 let toastPush: ((t: { title: string; body?: string }) => void) | null = null;
 export function ToastHost() {
-  const [items, setItems] = useState<{ id: number; title: string; body?: string }[]>([]);
+  const [items, setItems] = useState<
+    { id: number; title: string; body?: string }[]
+  >([]);
   useEffect(() => {
     toastPush = ({ title, body }) => {
       const id = Date.now() + Math.random();
       setItems((xs) => [...xs, { id, title, body }]);
       setTimeout(() => setItems((xs) => xs.filter((x) => x.id !== id)), 4200);
     };
-    return () => { toastPush = null; };
+    return () => {
+      toastPush = null;
+    };
   }, []);
   return (
-    <div className="pointer-events-none fixed bottom-5 right-5 z-[60] flex w-80 flex-col gap-2" role="status" aria-live="polite">
+    <div
+      className="pointer-events-none fixed bottom-5 right-5 z-[60] flex w-80 flex-col gap-2"
+      role="status"
+      aria-live="polite"
+    >
       <AnimatePresence>
         {items.map((t) => (
           <motion.div
@@ -366,8 +809,13 @@ export function ToastHost() {
             exit={{ opacity: 0, y: 6, scale: 0.98 }}
             transition={{ duration: duration.base, ease: easeOutExpo }}
           >
-            <div className="flex items-center gap-2 text-sm font-semibold"><CheckCircle2 className="h-4 w-4 text-emerald-600" />{t.title}</div>
-            {t.body && <div className="mt-0.5 text-[13px] text-slate-500">{t.body}</div>}
+            <div className="flex items-center gap-2 text-sm font-semibold">
+              <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+              {t.title}
+            </div>
+            {t.body && (
+              <div className="mt-0.5 text-[13px] text-slate-500">{t.body}</div>
+            )}
           </motion.div>
         ))}
       </AnimatePresence>
